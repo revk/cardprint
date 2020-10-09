@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <execinfo.h>
 #include <axl.h>
+#include <ajl.h>
 
 #define xquoted(x)      #x
 #define quoted(x)       xquoted(x)
@@ -40,22 +41,23 @@ char *portname = "9100";
 #ifdef	PRINTWIDTH
 const int with = PRINTWIDTH;
 #else
-const int width = 1036;
+int width = 1036;
 #endif
 #ifdef	PRINTHEIGHT
 const int height = PRINTHEIGHT;
 #else
-const int height = 664;
+int height = 664;
 #endif
 #ifdef	DPI
 const int dpi = DPI;
 #else
-const int dpi = 300;
+int dpi = 300;
 #endif
 
 int debug = 0;
 int png = 0;
 int rgb = 0;
+int json = 0;
 int loaded = 0;
 int retain = 0;
 int uvsingle = 0;
@@ -77,7 +79,17 @@ int main(int argc, const char *argv[])
          { "copies", 'N', POPT_ARGFLAG_SHOW_DEFAULT | POPT_ARG_INT, &copies, 0, "Copies", "N" },
          { "js-status", 'j', POPT_ARG_STRING, &jsstatus, 0, "Javascript output", "html-ID" },
          { "rgb", 'r', POPT_ARG_NONE, &rgb, 0, "Make RGB instead of printing" },
+         { "json", 'J', POPT_ARG_NONE, &json, 0, "Make JSON instead of printing" },
          { "png", 'p', POPT_ARG_NONE, &png, 0, "Make PNG instead of printing" },
+#ifndef	DPI
+         { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "dpi" },
+#endif
+#ifndef	WIDTH
+         { "cols", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &width, 0, "Width", "width" },
+#endif
+#ifndef	HEIGHT
+         { "rows", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &height, 0, "Height", "height" },
+#endif
          { "input", 'i', POPT_ARG_STRING, &input, 0, "Input file (else stdin)", "filename" },
          { "output", 'o', POPT_ARG_STRING, &output, 0, "Output file (else stdout)", "filename" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
@@ -95,7 +107,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (rgb && png) || (!rgb && !png && !printer))
+      if (poptPeekArg(optCon) || (rgb && png) || (!json && !rgb && !png && !printer))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -351,7 +363,35 @@ int main(int argc, const char *argv[])
       fclose(f);
    }
 
-   if (!rgb && !png)
+   if (json)
+   {
+      FILE *f = fopen(tmprgb, "r");
+      j_t j = j_create();
+      j_t p = j_store_array(j, "print");
+      unsigned char *panel = malloc(width * height);
+      char *b64 = malloc((width * height * 8 + 5) / 6 + 3);     // Allow ==[null]
+      for (int side = 0; side < sides; side++)
+      {
+         j_t s = j_append_object(p);
+         for (int layer = 0; layer < 5; layer++)
+         {
+            if (fread(panel, width * height, 1, f) == 1)
+            {
+               static char *name[] = { "Y", "M", "C", "K", "U" };
+               if (!j_baseN(width * height, panel, (width * height * 8 + 5) / 6 + 3, b64, JBASE64, 6))
+                  errx(1, "base64 fail %p", panel);
+               j_store_string(s, name[layer], b64);
+            }
+         }
+      }
+      free(b64);
+      free(panel);
+      fclose(f);
+      j_err(j_write(j, stdout));
+      j_delete(&j);
+   }
+
+   if (!rgb && !png && !json)
    {                            // Send layers to matica
       int status = 0;
       pid_t child = fork();
