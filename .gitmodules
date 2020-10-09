@@ -1,0 +1,6 @@
+[submodule "AJL"]
+	path = AJL
+	url = https://github.com/revk/AJL
+[submodule "DESFireAES"]
+	path = DESFireAES
+	url = https://github.com/revk/DESFireAES
