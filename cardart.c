@@ -50,97 +50,95 @@ int fast = 0;
 int unsafe = 0;
 int keepfiles = 0;
 
-int
-mkstempsuffix (char *fn)
+int mkstempsuffix(char *fn)
 {
-   char *e = strrchr (fn, '.');
+   char *e = strrchr(fn, '.');
    if (!e)
    {
-      int f = mkstemp (fn);
+      int f = mkstemp(fn);
       if (f >= 0 && debug && keepfiles)
-         fprintf (stderr, "Temp file %s\n", fn);
+         fprintf(stderr, "Temp file %s\n", fn);
       return f;
    }
 #if 0
-   int f = mkstemps (fn, strlen (e));
+   int f = mkstemps(fn, strlen(e));
    if (f >= 0 && debug && keepfiles)
-      fprintf (stderr, "Temp file %s\n", fn);
+      fprintf(stderr, "Temp file %s\n", fn);
    return f;
 #else
    // Bodge - not bullet proof
    *e = 0;
-   int f = mkstemp (fn);
+   int f = mkstemp(fn);
    if (f < 0)
       return f;
    if (keepfiles)
-      chmod (fn, 0666);
-   char *was = strdupa (fn);
+      chmod(fn, 0666);
+   char *was = strdupa(fn);
    *e = '.';
-   if (!rename (was, fn))
+   if (!rename(was, fn))
       return f;
-   close (f);
-   unlink (was);
+   close(f);
+   unlink(was);
    if (f >= 0 && debug && keepfiles)
-      fprintf (stderr, "Temp file %s\n", fn);
+      fprintf(stderr, "Temp file %s\n", fn);
    return -1;
 #endif
 }
 
-unsigned char *
-loadfile (const char *filename, int width, int height, int bpp, int flip)
+unsigned char *loadfile(const char *filename, int width, int height, int bpp, int flip)
 {                               // Load a file - makes in to a BMP with alpha 0xFF for visible
    if (!filename)
       return NULL;
    if (debug)
-      fprintf (stderr, "Load %s (bpp=%d flip=%d)\n", filename, bpp, flip);
+      fprintf(stderr, "Load %s (bpp=%d flip=%d)\n", filename, bpp, flip);
    int temp;
    ssize_t l;
    int f,
-     t;
+    t;
    const char *zaplater = NULL;
    unsigned char *m = 0;
    struct stat s;
-   char *id = strrchr (filename, '#');
+   char *id = strrchr(filename, '#');
    if (id)
       *id++ = 0;
    int w = 0,
-      h = 0;                    // RGBA layour
-   f = open (filename, O_RDONLY);
+       h = 0;                   // RGBA layour
+   f = open(filename, O_RDONLY);
    if (f < 0)
    {
-      warnx ("Cannot open: %s", filename);
+      warnx("Cannot open: %s", filename);
       return NULL;
    }
    {
-      if (fstat (f, &s))
-         errx (1, "Cannot stat: %s", filename);
+      if (fstat(f, &s))
+         errx(1, "Cannot stat: %s", filename);
       if (!s.st_size)
       {
          if (debug)
-            warnx ("%s empty file", filename);
-         close (f);
+            warnx("%s empty file", filename);
+         close(f);
          return NULL;
       }
       char magic[2];
-      if (read (f, magic, 2) != 2)
-         errx (1, "%s cannot read magic number", filename);
-      lseek (f, 0, SEEK_SET);
+      if (read(f, magic, 2) != 2)
+         errx(1, "%s cannot read magic number", filename);
+      lseek(f, 0, SEEK_SET);
       if (magic[0] == '<' && magic[1] == '?')
       {                         // assuming SVG - convert to PNG
          if (debug)
-            fprintf (stderr, "Convert from SVG\n");
+            fprintf(stderr, "Convert from SVG\n");
          char tmp[] = "/tmp/cardXXXXXX.png";
-         if ((t = mkstempsuffix (tmp)) < 0)
-            errx (1, "Bad tmp %s", tmp);
-         close (t);
-         close (f);
+         if ((t = mkstempsuffix(tmp)) < 0)
+            errx(1, "Bad tmp %s", tmp);
+         close(t);
+         close(f);
          char *args[20];
          int a = 0;
          args[a++] = "inkscape";
          args[a++] = "--without-gui";
          args[a++] = "--export-area-page";
-         if (asprintf (&args[a++], "--export-dpi=%d", dpi) < 0)
-            errx (1, "malloc");
+         if (asprintf(&args[a++], "--export-dpi=%d", dpi) < 0)
+            errx(1, "malloc");
          if (id)
          {
             args[a++] = "--export-id-only";
@@ -154,169 +152,166 @@ loadfile (const char *filename, int width, int height, int bpp, int flip)
          if (debug)
          {
             for (a = 0; args[a]; a++)
-               fprintf (stderr, "%s ", args[a]);
-            fprintf (stderr, "\n");
+               fprintf(stderr, "%s ", args[a]);
+            fprintf(stderr, "\n");
          }
-         pid_t p = fork ();
+         pid_t p = fork();
          if (p < 0)
-            err (1, "inkscape");
+            err(1, "inkscape");
          if (p)
          {                      // Parent
-            if (waitpid (p, NULL, 0) < 0)
-               err (1, "inkscape");
+            if (waitpid(p, NULL, 0) < 0)
+               err(1, "inkscape");
          } else
          {                      // Child
-            setenv ("HOME", "/tmp", 1);
-            close (1);
-            execvp ("inkscape", args);
-            err (1, "inkspace");
+            setenv("HOME", "/tmp", 1);
+            close(1);
+            execvp("inkscape", args);
+            err(1, "inkspace");
          }
-         f = open (tmp, O_RDONLY);
+         f = open(tmp, O_RDONLY);
          if (f < 0)
-            errx (1, "Cannot open: %s [%s]", filename, tmp);
-         if (fstat (f, &s))
-            errx (1, "Cannot stat: %s", filename);
+            errx(1, "Cannot open: %s [%s]", filename, tmp);
+         if (fstat(f, &s))
+            errx(1, "Cannot stat: %s", filename);
          if (!s.st_size)
          {
-            warnx ("%s produced no output", filename);
-            close (f);
+            warnx("%s produced no output", filename);
+            close(f);
             return NULL;
          }
          //if (!keepfiles) unlink (tmp);
-         filename = strdup (tmp);       //  Used to convert to bmp
+         filename = strdup(tmp);        //  Used to convert to bmp
          zaplater = filename;
       }
       if (magic[0] == '%' && magic[1] == '!')
       {                         // Postscript
          if (debug)
-            fprintf (stderr, "Convert from PS\n");
+            fprintf(stderr, "Convert from PS\n");
          char cmd[10000];
          char tmp[] = "/tmp/cardXXXXXX.png";
-         if ((t = mkstempsuffix (tmp)) < 0)
-            errx (1, "Bad tmp %s", tmp);
-         close (t);
-         sprintf (cmd,
-                  "gs %s%s-dNOPAUSE -sDEVICE=%s -sOutputFile=%s -r%dx%d -g%dx%d%s - > /dev/null", debug ? "" : "-q -dBATCH ",
-                  unsafe ? "" : "-dSAFER ", (bpp == 1) ? "pngmono" : (bpp == 8) ? "pnggray" : "png16m", tmp, dpi, dpi, width,
-                  height, fast ? "" : " -dTextAlphaBits=4 -dGraphicsAlphaBits=4");
+         if ((t = mkstempsuffix(tmp)) < 0)
+            errx(1, "Bad tmp %s", tmp);
+         close(t);
+         sprintf(cmd, "gs %s%s-dNOPAUSE -sDEVICE=%s -sOutputFile=%s -r%dx%d -g%dx%d%s - > /dev/null", debug ? "" : "-q -dBATCH ", unsafe ? "" : "-dSAFER ", (bpp == 1) ? "pngmono" : (bpp == 8) ? "pnggray" : "png16m", tmp, dpi, dpi, width, height, fast ? "" : " -dTextAlphaBits=4 -dGraphicsAlphaBits=4");
 
          if (debug)
-            fprintf (stderr, "%s\n", cmd);
-         FILE *ps = popen (cmd, "w");
+            fprintf(stderr, "%s\n", cmd);
+         FILE *ps = popen(cmd, "w");
          if (!ps)
          {
-            warnx ("Could not run %s on %s", cmd, filename);
-            close (f);
+            warnx("Could not run %s on %s", cmd, filename);
+            close(f);
             return NULL;
          }
-         fprintf (ps, "%%!\n%d 72 mul %d div %d 72 mul %d div translate\n", width - cardw, dpi * 2, height - cardh, dpi * 2);   // 0,0 is edge of card
+         fprintf(ps, "%%!\n%d 72 mul %d div %d 72 mul %d div translate\n", width - cardw, dpi * 2, height - cardh, dpi * 2);    // 0,0 is edge of card
          //if (flip) fprintf (ps, "%d 72 mul %d div %d 72 mul %d div translate 180 rotate\n", cardw, dpi, cardh, dpi);
          {                      // feed in the postscript
             unsigned char temp[1024];
             int l;
-            while ((l = read (f, temp, sizeof (temp))) > 0 && fwrite (temp, 1, l, ps) == l);
+            while ((l = read(f, temp, sizeof(temp))) > 0 && fwrite(temp, 1, l, ps) == l);
          }
-         if (pclose (ps) < 0)
+         if (pclose(ps) < 0)
          {
-            warnx ("%s failed to convert", filename);
-            close (f);
+            warnx("%s failed to convert", filename);
+            close(f);
             return NULL;
          }
-         close (f);
-         f = open (tmp, O_RDONLY);
+         close(f);
+         f = open(tmp, O_RDONLY);
          if (f < 0)
-            errx (1, "Cannot open: %s [%s]", filename, tmp);
-         if (fstat (f, &s))
-            errx (1, "Cannot stat: %s", filename);
+            errx(1, "Cannot open: %s [%s]", filename, tmp);
+         if (fstat(f, &s))
+            errx(1, "Cannot stat: %s", filename);
          if (!s.st_size)
          {
-            warnx ("%s produced no output", filename);
-            close (f);
+            warnx("%s produced no output", filename);
+            close(f);
             return NULL;
          }
-         filename = strdup (tmp);       //  Used to convert to bmp
+         filename = strdup(tmp);        //  Used to convert to bmp
          zaplater = filename;
       }
       {                         // image - convert to rgba in BMP style
          if (debug)
-            fprintf (stderr, "Convert to RGBA %s\n", filename);
-         char *e = strrchr (filename, '.');
+            fprintf(stderr, "Convert to RGBA %s\n", filename);
+         char *e = strrchr(filename, '.');
          if (1)                 // Convert anyway
          {                      // Convert to RGBA
             char cmd[10000];
             char tmp[] = "/tmp/cardXXXXXX.bmp";
-            if (e && strlen (e) == 4 && isalnum (e[1]) && isalnum (e[2]) && isalnum (e[3]))
-               strcpy (tmp + sizeof (tmp) - 5, e);      // Extn
-            if ((t = mkstempsuffix (tmp)) < 0)
-               errx (1, "Bad tmp %s", tmp);
-            close (t);
-            unlink (tmp);
-            if (link (filename, tmp))
+            if (e && strlen(e) == 4 && isalnum(e[1]) && isalnum(e[2]) && isalnum(e[3]))
+               strcpy(tmp + sizeof(tmp) - 5, e);        // Extn
+            if ((t = mkstempsuffix(tmp)) < 0)
+               errx(1, "Bad tmp %s", tmp);
+            close(t);
+            unlink(tmp);
+            if (link(filename, tmp))
             {                   // Link or copy source
                if (errno != EXDEV)
-                  err (1, "Cannot link %s %s", filename, tmp);
+                  err(1, "Cannot link %s %s", filename, tmp);
                // copy
-               int i = open (filename, O_RDONLY);
+               int i = open(filename, O_RDONLY);
                if (i < 0)
-                  err (1, "Cannot copy %s", filename);
-               int o = open (tmp, O_WRONLY | O_CREAT, 05666);
+                  err(1, "Cannot copy %s", filename);
+               int o = open(tmp, O_WRONLY | O_CREAT, 05666);
                if (o < 0)
-                  err (1, "Cannot copy to %s", tmp);
+                  err(1, "Cannot copy to %s", tmp);
                unsigned char tmp[1024];
                size_t l;
-               while ((l = read (i, tmp, sizeof (tmp))) > 0)
-                  if (write (o, tmp, l) != l)
-                     err (1, "Bad copy to %s", tmp);
-               close (i);
-               close (o);
+               while ((l = read(i, tmp, sizeof(tmp))) > 0)
+                  if (write(o, tmp, l) != l)
+                     err(1, "Bad copy to %s", tmp);
+               close(i);
+               close(o);
             }
             // We cannot trust gm to make uncompressed BMP so we fudge it
-            sprintf (cmd, "gm identify -format \"%%W,%%H\" %s", tmp);
+            sprintf(cmd, "gm identify -format \"%%W,%%H\" %s", tmp);
             if (debug)
-               fprintf (stderr, "%s\n", cmd);
-            FILE *gm = popen (cmd, "r");
+               fprintf(stderr, "%s\n", cmd);
+            FILE *gm = popen(cmd, "r");
             if (!gm)
-               err (1, "Cannot run %s", cmd);
-            if (fscanf (gm, "%d,%d", &w, &h) != 2)
-               errx (1, "Cannot identify %s", filename);
-            fclose (gm);
+               err(1, "Cannot run %s", cmd);
+            if (fscanf(gm, "%d,%d", &w, &h) != 2)
+               errx(1, "Cannot identify %s", filename);
+            fclose(gm);
             if (!w || !h)
-               errx (1, "Cannot identify %s", filename);
+               errx(1, "Cannot identify %s", filename);
             char tmp2[] = "/tmp/cardXXXXXX.rgba";
-            if ((t = mkstempsuffix (tmp2)) < 0)
-               errx (1, "Bad tmp %s", tmp2);
-            close (t);
-            sprintf (cmd, "gm convert %s%s +compress -format RGBA %s", tmp, flip ? " -flop" : " -flip", tmp2);
+            if ((t = mkstempsuffix(tmp2)) < 0)
+               errx(1, "Bad tmp %s", tmp2);
+            close(t);
+            sprintf(cmd, "gm convert %s%s +compress -format RGBA %s", tmp, flip ? " -flop" : " -flip", tmp2);
             if (debug)
-               fprintf (stderr, "%s\n", cmd);
-            if (system (cmd))
-               errx (1, "Convert failed");
-            close (f);
-            f = open (tmp2, O_RDONLY);
+               fprintf(stderr, "%s\n", cmd);
+            if (system(cmd))
+               errx(1, "Convert failed");
+            close(f);
+            f = open(tmp2, O_RDONLY);
             if (f < 0)
-               err (1, "Failed %s", tmp2);
+               err(1, "Failed %s", tmp2);
             if (!keepfiles)
             {
-               unlink (tmp);
-               unlink (tmp2);
+               unlink(tmp);
+               unlink(tmp2);
             }
          } else
-            lseek (f, 0, SEEK_SET);     // is a BMP already
-         if (fstat (f, &s))
-            errx (1, "Cannot stat: %s", filename);
+            lseek(f, 0, SEEK_SET);      // is a BMP already
+         if (fstat(f, &s))
+            errx(1, "Cannot stat: %s", filename);
       }
    }
    if (w)
    {                            // rgba
       if (s.st_size != w * h * 4)
-         errx (1, "%s bad file size", filename);
-      m = malloc (s.st_size + 54);      // Include BMP header
+         errx(1, "%s bad file size", filename);
+      m = malloc(s.st_size + 54);       // Include BMP header
       if (!m)
-         errx (1, "malloc");
-      memset (m, 0, 54);
-      if (read (f, m + 54, s.st_size) != s.st_size)
-         errx (1, "Bad read");
-      close (f);
+         errx(1, "malloc");
+      memset(m, 0, 54);
+      if (read(f, m + 54, s.st_size) != s.st_size)
+         errx(1, "Bad read");
+      close(f);
       // Some data in pseudo BMP header
       m[10] = 54;               // offset to actual data
       m[28] = 32;               // RGBA
@@ -327,35 +322,34 @@ loadfile (const char *filename, int width, int height, int bpp, int flip)
    } else
    {
       if (s.st_size < 54)
-         errx (1, "%s file too small", filename);
+         errx(1, "%s file too small", filename);
       if (s.st_size > 5000000)
-         errx (1, "%s file too large", filename);
-      m = malloc (s.st_size);
+         errx(1, "%s file too large", filename);
+      m = malloc(s.st_size);
       if (!m)
-         errx (1, "No memory for %llu bytes", (unsigned long long) s.st_size);
-      l = read (f, m, s.st_size);
+         errx(1, "No memory for %llu bytes", (unsigned long long) s.st_size);
+      l = read(f, m, s.st_size);
       if (l < 0)
-         errx (1, "Read failed: %s", filename);
+         errx(1, "Read failed: %s", filename);
       if (l < s.st_size)
-         errx (1, "%s did not read whole file", filename);
-      close (f);
+         errx(1, "%s did not read whole file", filename);
+      close(f);
       if (m[0] != 0x42 || m[1] != 0x4D || m[6] || m[7] || m[8] || m[9] || m[15] || m[26] != 1 || m[27])
-         errx (1, "Image file convert failed");
+         errx(1, "Image file convert failed");
       temp = (m[10] + (m[11] << 8) + (m[12] << 16) + (m[13] << 24));
       if (temp > s.st_size)
-         errx (1, "%s Bad offset", filename);
+         errx(1, "%s Bad offset", filename);
       if (m[30] || m[31] || m[32] || m[33])
-         errx (1, "%s Use uncompressed BMPs %02X%02X%02X%02X", filename, m[30], m[31], m[32], m[33]);
+         errx(1, "%s Use uncompressed BMPs %02X%02X%02X%02X", filename, m[30], m[31], m[32], m[33]);
    }
    if (debug)
-      fprintf (stderr, "%s size %lld\n", filename, (unsigned long long) s.st_size);
+      fprintf(stderr, "%s size %lld\n", filename, (unsigned long long) s.st_size);
    if (zaplater && !keepfiles)
-      unlink (zaplater);
+      unlink(zaplater);
    return m;
 }
 
-int
-main (int argc, const char *argv[])
+int main(int argc, const char *argv[])
 {
    int c;
    const char *c1file = NULL;
@@ -374,76 +368,76 @@ main (int argc, const char *argv[])
 
    poptContext optCon;          // context for parsing command-line options
    const struct poptOption optionsTable[] = {
-      {"c1", 'c', POPT_ARG_STRING, &c1file, 0, "Colour first side", "filename"},
-      {"k1", 'k', POPT_ARG_STRING, &k1file, 0, "Black first side", "filename"},
-      {"u1", 'u', POPT_ARG_STRING, &u1file, 0, "UV first side", "filename"},
-      {"i1", 'i', POPT_ARG_STRING, &i1file, 0, "Inhibit first side", "filename"},
-      {"c2", 'C', POPT_ARG_STRING, &c2file, 0, "Colour second side", "filename"},
-      {"k2", 'K', POPT_ARG_STRING, &k2file, 0, "Black second side", "filename"},
-      {"u2", 'U', POPT_ARG_STRING, &u2file, 0, "UV second side", "filename"},
-      {"i2", 'I', POPT_ARG_STRING, &i2file, 0, "Inhibit second side", "filename"},
-      {"output", 'o', POPT_ARG_STRING, &outfile, 0, "Output file", "filename"},
-      {"format", 'f', POPT_ARG_STRING, &format, 0, "Format", "small/medium/large/Matica/Zebra/WxH"},
-      {"trans", 0, POPT_ARG_NONE, &trans, 0, "Make partly transparent for image overlay"},
-      {"long-edge", 0, POPT_ARG_NONE, &longedge, 0, "Second side is flipped on long edge not short"},
-      {"unsafe", 0, POPT_ARG_NONE, &unsafe, 0, "Allow unsafe ghostscript"},
-      {"fast", 0, POPT_ARG_NONE, &fast, 0, "Faster preview"},
-      {"dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "N"},
-      {"keep-files", 0, POPT_ARGFLAG_DOC_HIDDEN | POPT_ARG_NONE, &keepfiles, 0, "Keep temp files"},
-      {"debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug"},
-      POPT_AUTOHELP {}
+      { "c1", 'c', POPT_ARG_STRING, &c1file, 0, "Colour first side", "filename" },
+      { "k1", 'k', POPT_ARG_STRING, &k1file, 0, "Black first side", "filename" },
+      { "u1", 'u', POPT_ARG_STRING, &u1file, 0, "UV first side", "filename" },
+      { "i1", 'i', POPT_ARG_STRING, &i1file, 0, "Inhibit first side", "filename" },
+      { "c2", 'C', POPT_ARG_STRING, &c2file, 0, "Colour second side", "filename" },
+      { "k2", 'K', POPT_ARG_STRING, &k2file, 0, "Black second side", "filename" },
+      { "u2", 'U', POPT_ARG_STRING, &u2file, 0, "UV second side", "filename" },
+      { "i2", 'I', POPT_ARG_STRING, &i2file, 0, "Inhibit second side", "filename" },
+      { "output", 'o', POPT_ARG_STRING, &outfile, 0, "Output file", "filename" },
+      { "format", 'f', POPT_ARG_STRING, &format, 0, "Format", "small/medium/large/Matica/Zebra/WxH" },
+      { "trans", 0, POPT_ARG_NONE, &trans, 0, "Make partly transparent for image overlay" },
+      { "long-edge", 0, POPT_ARG_NONE, &longedge, 0, "Second side is flipped on long edge not short" },
+      { "unsafe", 0, POPT_ARG_NONE, &unsafe, 0, "Allow unsafe ghostscript" },
+      { "fast", 0, POPT_ARG_NONE, &fast, 0, "Faster preview" },
+      { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "N" },
+      { "keep-files", 0, POPT_ARGFLAG_DOC_HIDDEN | POPT_ARG_NONE, &keepfiles, 0, "Keep temp files" },
+      { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
+      POPT_AUTOHELP { }
    };
 
-   optCon = poptGetContext (NULL, argc, argv, optionsTable, 0);
+   optCon = poptGetContext(NULL, argc, argv, optionsTable, 0);
    //poptSetOtherOptionHelp (optCon, "");
 
-   if ((c = poptGetNextOpt (optCon)) < -1)
-      errx (1, "%s: %s\n", poptBadOption (optCon, POPT_BADOPTION_NOALIAS), poptStrerror (c));
+   if ((c = poptGetNextOpt(optCon)) < -1)
+      errx(1, "%s: %s\n", poptBadOption(optCon, POPT_BADOPTION_NOALIAS), poptStrerror(c));
 
-   if (poptPeekArg (optCon) || !format || !*format)
+   if (poptPeekArg(optCon) || !format || !*format)
    {
-      poptPrintUsage (optCon, stderr, 0);
+      poptPrintUsage(optCon, stderr, 0);
       return -1;
    }
 
    unsigned char *c1 = NULL,
-      *k1 = NULL,
-      *u1 = NULL,
-      *i1 = NULL;
+       *k1 = NULL,
+       *u1 = NULL,
+       *i1 = NULL;
    unsigned char *c2 = NULL,
-      *k2 = NULL,
-      *u2 = NULL,
-      *i2 = NULL;
+       *k2 = NULL,
+       *u2 = NULL,
+       *i2 = NULL;
 
-   if (isdigit (*format) || strchr ("sml", *format))
+   if (isdigit(*format) || strchr("sml", *format))
    {                            // Generate display image
       // Note, using RGBA conversion, alpha is 0xFF for visible, 0x00 for invisible
       int height = imageh,
-         width = imagew;
+          width = imagew;
       int scale = 1;
       if (*format == 'm')
          scale = 2;
       if (*format == 's')
          scale = 4;
-      if (isdigit (*format))
+      if (isdigit(*format))
       {                         // format is W or WxH
          const char *f = format;
          int w = 0,
-            h = 0;
-         while (isdigit (*f))
+             h = 0;
+         while (isdigit(*f))
             w = w * 10 + *f++ - '0';
          if (*f == 'x')
          {
             f++;
-            while (isdigit (*f))
+            while (isdigit(*f))
                h = h * 10 + *f++ - '0';
          }
          if (!w)
-            errx (1, "WTF?");
+            errx(1, "WTF?");
          if (w > maxw)
-            errx (1, "Too wide");
+            errx(1, "Too wide");
          if (h > maxh)
-            errx (1, "Too high");
+            errx(1, "Too high");
          if (w < cardw)
             scale = (cardw + w - 1) / w;
          width = w * scale;
@@ -452,16 +446,16 @@ main (int argc, const char *argv[])
          else
             height = cardh * width / cardw;
       }
-      c1 = loadfile (c1file, width, height, 24, 0);
-      k1 = loadfile (k1file, width, height, black, 0);
-      u1 = loadfile (u1file, width, height, 8, 0);
-      i1 = loadfile (i1file, width, height, 1, 0);
-      c2 = loadfile (c2file, width, height, 24, 0);
-      k2 = loadfile (k2file, width, height, black, 0);
-      u2 = loadfile (u2file, width, height, 8, 0);
-      i2 = loadfile (i2file, width, height, 1, 0);
+      c1 = loadfile(c1file, width, height, 24, 0);
+      k1 = loadfile(k1file, width, height, black, 0);
+      u1 = loadfile(u1file, width, height, 8, 0);
+      i1 = loadfile(i1file, width, height, 1, 0);
+      c2 = loadfile(c2file, width, height, 24, 0);
+      k2 = loadfile(k2file, width, height, black, 0);
+      u2 = loadfile(u2file, width, height, 8, 0);
+      i2 = loadfile(i2file, width, height, 1, 0);
       if (!outfile)
-         errx (1, "Specify output file");
+         errx(1, "Specify output file");
       int h = height;
       if (c2 || k2 || i2 || u2)
          h *= 2;                // Two sides on one image
@@ -470,55 +464,54 @@ main (int argc, const char *argv[])
       int t;
       char cmd[10000];
       char tmp[] = "/tmp/cardXXXXXX.png";
-      if ((t = mkstempsuffix (tmp)) < 0)
-         errx (1, "Bad tmp %s", tmp);
-      close (t);
-      sprintf (cmd, "gs -q %s-dBATCH -dNOPAUSE -sDEVICE=pngalpha -sOutputFile=%s -r%dx%d -g%dx%d%s - > /dev/null",
-               unsafe ? "" : "-dSAFER ", tmp, dpi, dpi, width, h, fast ? "" : " -dTextAlphaBits=4 -dGraphicsAlphaBits=4");
+      if ((t = mkstempsuffix(tmp)) < 0)
+         errx(1, "Bad tmp %s", tmp);
+      close(t);
+      sprintf(cmd, "gs -q %s-dBATCH -dNOPAUSE -sDEVICE=pngalpha -sOutputFile=%s -r%dx%d -g%dx%d%s - > /dev/null", unsafe ? "" : "-dSAFER ", tmp, dpi, dpi, width, h, fast ? "" : " -dTextAlphaBits=4 -dGraphicsAlphaBits=4");
       if (debug)
-         fprintf (stderr, "%s\n", cmd);
-      FILE *ps = popen (cmd, "w");
+         fprintf(stderr, "%s\n", cmd);
+      FILE *ps = popen(cmd, "w");
       if (!ps)
-         errx (1, "Cannot make image");
-      fprintf (ps, "%%!\n%d 72 mul %d div %d 72 mul %d div translate\n", width - cardw, dpi * 2, height - cardh, dpi * 2);
-      fprintf (ps, "1 1 1 setrgbcolor\n");
+         errx(1, "Cannot make image");
+      fprintf(ps, "%%!\n%d 72 mul %d div %d 72 mul %d div translate\n", width - cardw, dpi * 2, height - cardh, dpi * 2);
+      fprintf(ps, "1 1 1 setrgbcolor\n");
       if (c2 || k2 || i2 || u2)
       {                         // Second side
-         fprintf (ps, "newpath 9 9 9 180 270 arc 234 9 9 270 0 arc 234 144 9 0 90 arc 9 144 9 90 180 arc fill\n");
-         fprintf (ps, "0 %d 72 mul %d div translate\n", dpi, height);
+         fprintf(ps, "newpath 9 9 9 180 270 arc 234 9 9 270 0 arc 234 144 9 0 90 arc 9 144 9 90 180 arc fill\n");
+         fprintf(ps, "0 %d 72 mul %d div translate\n", dpi, height);
       }
-      fprintf (ps, "newpath 9 9 9 180 270 arc 234 9 9 270 0 arc 234 144 9 0 90 arc 9 144 9 90 180 arc fill\n");
-      fprintf (ps, "showpage\n");
-      pclose (ps);
+      fprintf(ps, "newpath 9 9 9 180 270 arc 234 9 9 270 0 arc 234 144 9 0 90 arc 9 144 9 90 180 arc fill\n");
+      fprintf(ps, "showpage\n");
+      pclose(ps);
       struct stat s;
       unsigned char *prev = NULL;
       int f;
       {                         // Make template in memory as BMP
          char tmp2[] = "/tmp/cardXXXXXX.rgba";
-         if ((t = mkstempsuffix (tmp2)) < 0)
-            errx (1, "Bad tmp %s", tmp2);
-         close (t);
-         snprintf (cmd, sizeof (cmd), "gm convert %s -format RGBA %s", tmp, tmp2);      // flip does not matter, symmetric
+         if ((t = mkstempsuffix(tmp2)) < 0)
+            errx(1, "Bad tmp %s", tmp2);
+         close(t);
+         snprintf(cmd, sizeof(cmd), "gm convert %s -format RGBA %s", tmp, tmp2);        // flip does not matter, symmetric
          if (debug)
-            fprintf (stderr, "%s\n", cmd);
-         if (system (cmd))
-            errx (1, "Convert failed");
-         f = open (tmp2, O_RDONLY);
+            fprintf(stderr, "%s\n", cmd);
+         if (system(cmd))
+            errx(1, "Convert failed");
+         f = open(tmp2, O_RDONLY);
          if (!keepfiles)
          {
-            unlink (tmp);
-            unlink (tmp2);
+            unlink(tmp);
+            unlink(tmp2);
          }
          if (f < 0)
-            errx (1, "Cannot write %s", tmp2);
-         if (fstat (f, &s))
-            errx (1, "%s", tmp2);
+            errx(1, "Cannot write %s", tmp2);
+         if (fstat(f, &s))
+            errx(1, "%s", tmp2);
          if (s.st_size != width * h * 4)
-            errx (1, "Bad template %s", tmp2);
-         prev = malloc (s.st_size + 54);
+            errx(1, "Bad template %s", tmp2);
+         prev = malloc(s.st_size + 54);
          if (!prev)
-            errx (1, "No memory for %llu bytes %s", (unsigned long long) s.st_size + 54, tmp2);
-         memset (prev, 0, 54);
+            errx(1, "No memory for %llu bytes %s", (unsigned long long) s.st_size + 54, tmp2);
+         memset(prev, 0, 54);
          unsigned long v;
          prev[0] = 'B';         // BMP header for final saved BMP file
          prev[1] = 'M';
@@ -538,25 +531,23 @@ main (int argc, const char *argv[])
          prev[35] = (v >> 8);
          prev[36] = (v >> 16);
          prev[37] = (v >> 24);
-         size_t l = read (f, prev + 54, s.st_size);
+         size_t l = read(f, prev + 54, s.st_size);
          if (l != s.st_size)
-            errx (1, "Bad read %s", tmp2);
-         close (f);
+            errx(1, "Bad read %s", tmp2);
+         close(f);
          if (!keepfiles)
-            unlink (tmp2);
+            unlink(tmp2);
       }
       char tmp2[] = "/tmp/cardXXXXXX.bmp";
-      if ((t = mkstempsuffix (tmp2)) < 0)
-         errx (1, "Bad tmp %s", tmp2);
-      close (t);
+      if ((t = mkstempsuffix(tmp2)) < 0)
+         errx(1, "Bad tmp %s", tmp2);
+      close(t);
       unsigned char *p = prev + 54,
-         *q;
-      void load (unsigned char *c, unsigned char *k, unsigned char *i, unsigned char *u)
-      {
+          *q;
+      void load(unsigned char *c, unsigned char *k, unsigned char *i, unsigned char *u) {
          unsigned char *e = p + width * height * 4;
-         typedef void loader (unsigned char *, unsigned char, unsigned char, unsigned char, unsigned char);
-         void loadc (unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A)
-         {                      // Colour
+         typedef void loader(unsigned char *, unsigned char, unsigned char, unsigned char, unsigned char);
+         void loadc(unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A) {   // Colour
             out[0] = R;
             out[1] = G;
             out[2] = B;
@@ -567,8 +558,7 @@ main (int argc, const char *argv[])
                   out[3] = t;
             }
          }
-         void loadk (unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A)
-         {                      // Black
+         void loadk(unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A) {   // Black
             if (R + G + B < 3 * 128 && A > 128)
             {                   // Apply black
                out[0] = 0;
@@ -577,8 +567,7 @@ main (int argc, const char *argv[])
                out[3] = 0xFF;
             }
          }
-         void loadu (unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A)
-         {                      // UV
+         void loadu(unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A) {   // UV
             if (!c && !k)
             {
                out[0] = (255 - R) * 0xFF / 255;
@@ -593,13 +582,11 @@ main (int argc, const char *argv[])
                out[2] = 0x99;
             }
          }
-         void loadi (unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A)
-         {                      // Inhibit
+         void loadi(unsigned char *out, unsigned char R, unsigned char G, unsigned char B, unsigned char A) {   // Inhibit
             if (R + G + B < 3 * 128)
                out[3] = 0;
          }
-         void scan (unsigned char *bmp, loader * load)
-         {
+         void scan(unsigned char *bmp, loader * load) {
             if (!bmp)
                return;
             unsigned char *r = bmp + bmp[10] + (bmp[11] << 8) + (bmp[12] << 16) + (bmp[13] << 24);
@@ -622,14 +609,14 @@ main (int argc, const char *argv[])
                unsigned char *i = r;
                r += line;
                int x,
-                 l = (col - width) / 2,
-                  v = 0;
+                l = (col - width) / 2,
+                   v = 0;
                for (x = 0; x < col; x++)
                {
                   int R = 0,
-                     G = 0,
-                     B = 0,
-                     A = 0XFF;
+                      G = 0,
+                      B = 0,
+                      A = 0XFF;
                   if (bpp == 1)
                   {
                      if (!(x & 7))
@@ -655,73 +642,73 @@ main (int argc, const char *argv[])
                         A = *i++;
                   }
                   if (x >= l && x < l + width)
-                     load (q + (x - l) * 4, R, G, B, A);
+                     load(q + (x - l) * 4, R, G, B, A);
                }
                q += width * 4;  // next row
             }
          }
-         scan (c, loadc);
-         scan (k, loadk);
-         scan (i, loadi);
-         scan (u, loadu);
+         scan(c, loadc);
+         scan(k, loadk);
+         scan(i, loadi);
+         scan(u, loadu);
       }
       if (c2 || k2 || i2 || u2)
       {
-         load (c2, k2, i2, u2);
+         load(c2, k2, i2, u2);
          p += width * height * 4;
       }
-      load (c1, k1, i1, u1);
-      f = open (tmp2, O_WRONLY | O_CREAT, 0666);
+      load(c1, k1, i1, u1);
+      f = open(tmp2, O_WRONLY | O_CREAT, 0666);
       if (f < 0)
-         errx (1, "Cannot write %s", outfile);
-      if (write (f, prev, s.st_size + 54) < 0)
-         err (1, "write");
-      close (f);
+         errx(1, "Cannot write %s", outfile);
+      if (write(f, prev, s.st_size + 54) < 0)
+         err(1, "write");
+      close(f);
       // Convert to png or requested format using gm
       char tmp3[] = "/tmp/cardXXXXXX.png";
       {
-         char *e = strrchr (outfile, '.');
-         if (e && strlen (e) == 4 && isalnum (e[1]) && isalnum (e[2]) && isalnum (e[3]))
-            strcpy (tmp + sizeof (tmp3) - 5, e);        // Extn
+         char *e = strrchr(outfile, '.');
+         if (e && strlen(e) == 4 && isalnum(e[1]) && isalnum(e[2]) && isalnum(e[3]))
+            strcpy(tmp + sizeof(tmp3) - 5, e);  // Extn
       }
-      if ((t = mkstempsuffix (tmp3)) < 0)
-         errx (1, "Bad tmp %s", tmp3);
-      close (t);
-      snprintf (cmd, sizeof (cmd), "gm convert %s -resize %dx%d %s", tmp2, width / scale, h / scale, tmp3);
+      if ((t = mkstempsuffix(tmp3)) < 0)
+         errx(1, "Bad tmp %s", tmp3);
+      close(t);
+      snprintf(cmd, sizeof(cmd), "gm convert %s -resize %dx%d %s", tmp2, width / scale, h / scale, tmp3);
       if (debug)
-         fprintf (stderr, "%s\n", cmd);
-      if (system (cmd))
-         errx (1, "Convert failed");
+         fprintf(stderr, "%s\n", cmd);
+      if (system(cmd))
+         errx(1, "Convert failed");
       if (!keepfiles)
-         unlink (tmp2);
-      if (rename (tmp3, outfile))
+         unlink(tmp2);
+      if (rename(tmp3, outfile))
       {
          if (errno != EXDEV)
-            err (1, "Rename failed");
+            err(1, "Rename failed");
          // copy
-         int i = open (tmp3, O_RDONLY);
+         int i = open(tmp3, O_RDONLY);
          if (i < 0)
-            err (1, "Cannot copy %s", tmp3);
-         int o = open (outfile, O_WRONLY | O_CREAT, 05666);
+            err(1, "Cannot copy %s", tmp3);
+         int o = open(outfile, O_WRONLY | O_CREAT, 05666);
          if (o < 0)
-            err (1, "Cannot copy to %s", outfile);
+            err(1, "Cannot copy to %s", outfile);
          unsigned char tmp[1024];
          size_t l;
-         while ((l = read (i, tmp, sizeof (tmp))) > 0)
-            if (write (o, tmp, l) != l)
-               err (1, "Bad copy to %s", outfile);
-         close (i);
-         close (o);
-         unlink (tmp3);
+         while ((l = read(i, tmp, sizeof(tmp))) > 0)
+            if (write(o, tmp, l) != l)
+               err(1, "Bad copy to %s", outfile);
+         close(i);
+         close(o);
+         unlink(tmp3);
       }
-      chmod (outfile, 0666);
+      chmod(outfile, 0666);
       return 0;
    }
 
-   if (strchr ("WM", *format))
+   if (strchr("WM", *format))
    {                            // Generate matica file.
       int width = 0,
-         height = 0;
+          height = 0;
       if (*format == 'Z')
       {                         // Zebra raw format (TODO inhibit on zebra)
          longedge = 1 - longedge;
@@ -733,19 +720,18 @@ main (int argc, const char *argv[])
          width = maticaw;
          height = maticah;
       }
-      c1 = loadfile (c1file, width, height, 24, 0);
-      k1 = loadfile (k1file, width, height, black, 0);
-      u1 = loadfile (u1file, width, height, 8, 0);
-      c2 = loadfile (c2file, width, height, 24, !longedge);
-      k2 = loadfile (k2file, width, height, black, !longedge);
-      u2 = loadfile (u2file, width, height, 8, !longedge);
-      int o = fileno (stdout);
-      if (outfile && (o = open (outfile, O_WRONLY | O_CREAT, 0666)) < 0)
-         err (1, "Cannot write %s", outfile);
-      void panel (unsigned char *bmp, int colour)
-      {                         // Output a panel
+      c1 = loadfile(c1file, width, height, 24, 0);
+      k1 = loadfile(k1file, width, height, black, 0);
+      u1 = loadfile(u1file, width, height, 8, 0);
+      c2 = loadfile(c2file, width, height, 24, !longedge);
+      k2 = loadfile(k2file, width, height, black, !longedge);
+      u2 = loadfile(u2file, width, height, 8, !longedge);
+      int o = fileno(stdout);
+      if (outfile && (o = open(outfile, O_WRONLY | O_CREAT, 0666)) < 0)
+         err(1, "Cannot write %s", outfile);
+      void panel(unsigned char *bmp, int colour) {      // Output a panel
          unsigned char p[height * width];
-         memset (p, 0, sizeof (p));
+         memset(p, 0, sizeof(p));
          if (bmp)
          {
             unsigned char *r = bmp + bmp[10] + (bmp[11] << 8) + (bmp[12] << 16) + (bmp[13] << 24);
@@ -754,7 +740,7 @@ main (int argc, const char *argv[])
             int col = (bmp[18] + (bmp[19] << 8) + (bmp[20] << 16) + (bmp[21] << 24));
             int line = ((col * bpp + 7) / 8 + 3) / 4 * 4;
             if (debug)
-               fprintf (stderr, "%dx%dx%d\n", col, row, bpp);
+               fprintf(stderr, "%dx%dx%d\n", col, row, bpp);
             int y = 0;
             if (row > height)
                r += (row - height) / 2 * line;
@@ -765,7 +751,7 @@ main (int argc, const char *argv[])
                unsigned char *i = r;
                r += line;
                int x = 0,
-                  c = col;
+                   c = col;
                if (col > width)
                {                // Skip half extra cols
                   if (bpp == 1)
@@ -775,7 +761,7 @@ main (int argc, const char *argv[])
                } else
                   x = (width - col) / 2;
                unsigned char *q = p + width * (height - y - 1),
-                  v = 0;
+                   v = 0;
                for (; x < width && c--; x++)
                {
                   if (bpp == 1)
@@ -803,22 +789,22 @@ main (int argc, const char *argv[])
                }
             }
          }
-         if (write (o, p, sizeof (p)) < 0)
-            err (1, "write");
+         if (write(o, p, sizeof(p)) < 0)
+            err(1, "write");
       }
-      panel (c1, 3);
-      panel (c1, 2);
-      panel (c1, 1);
-      panel (k1, -1);
-      panel (u1, 0);
-      panel (c2, 3);
-      panel (c2, 2);
-      panel (c2, 1);
-      panel (k2, -1);
-      panel (u2, 0);
-      close (o);
+      panel(c1, 3);
+      panel(c1, 2);
+      panel(c1, 1);
+      panel(k1, -1);
+      panel(u1, 0);
+      panel(c2, 3);
+      panel(c2, 2);
+      panel(c2, 1);
+      panel(k2, -1);
+      panel(u2, 0);
+      close(o);
       if (outfile)
-         chmod (outfile, 0666);
+         chmod(outfile, 0666);
       return 0;
    }
    return 0;
