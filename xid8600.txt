@@ -7,8 +7,8 @@ TCP 50730 seems to be printing
 Messages seem to follow a block syntax being multiple of BE 32 bit words.
 0: Message type (low bit of first byte is cmd/ack it seems)
 1: Length, in number of following 32 bit words
-2: Parameter code
-3: Sequence
+2: Sequence
+3: Sequence response?
 4+: Data
 
 F0000400 00000004 00000004 SSSSSSSS 14000000 1F000000 Some sort of status request
