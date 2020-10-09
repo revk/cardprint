@@ -31,7 +31,6 @@
 #include <ctype.h>
 #include <err.h>
 #include <axl.h>
-#include <sqllib.h>
 #include <errno.h>
 
 unsigned int dpi = 300;
