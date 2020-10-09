@@ -56,6 +56,7 @@ j_t j_new(void)
    j_t j = j_create();
    if (status)
       j_store_string(j, "status", status);
+   j_store_int(j, "position", posn);
    return j;
 }
 
@@ -272,7 +273,6 @@ const char *check_position(void)
       if (buf[18])
          posn = 5;
       j_t j = j_new();
-      j_store_int(j, "position", posn);
       client_tx(j);
    }
    return error;
@@ -436,6 +436,8 @@ char *client_rx(j_t j)
    check_position();
    if (error)
       return strdup(error);
+   if (posn == 5)
+      return strdup("");        // Done
    return NULL;
 }
 
@@ -627,7 +629,7 @@ int main(int argc, const char *argv[])
          er = job(from);
       if (debug)
          warnx("Finished %s: %s", from, er ? : "OK");
-      if (er)
+      if (er && *er)
       {
          j_t j = j_new();
          j_t e = j_store_object(j, "error");
@@ -635,8 +637,9 @@ int main(int argc, const char *argv[])
          if (rxerr)
             j_store_stringf(e, "code", "%08X", rxerr);
          client_tx(j);
-         free(er);
       }
+      if (er)
+         free(er);
       fclose(clientr);
       fclose(clientw);
       close(s);
