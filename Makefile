@@ -1,4 +1,4 @@
-TARGETS=printsvg cardart matica xid8600 xid
+TARGETS=printsvg cardart matica xidserver xid
 
 all: ${TARGETS}
 clean:
@@ -24,5 +24,5 @@ cardart: cardart.c
 xid: xid.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o
 
-xid8600: xid8600.c AJL/ajl.o
+xidserver: xidserver.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o
