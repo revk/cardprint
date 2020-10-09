@@ -33,14 +33,22 @@ int psock = -1;                 // Connected printer (ethernet)
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
 unsigned int bufmax = 0;        // Max buffer space malloc'd
-unsigned int buftxcmd = 0;      // Last tx command
-unsigned int bufrxcmd = 0;      // Last rx command
+unsigned int txcmd = 0;         // Last tx command
+unsigned int rxcmd = 0;         // Last rx command
+unsigned int rxerr = 0;         // Last rx error
 unsigned int seq = 0;           // Sequence
 int posn = 0;                   // Current card position
+
+// Printer specific settings
+unsigned char xid8600 = 0;      // Is an XID8600
+
+const char *client_tx(j_t j);
 
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
    // TODO USB?
+   seq = 0x99999999;
+   txcmd = rxcmd = rxerr = 0;
    if (psock >= 0)
       return "Printer already connected";
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
@@ -79,9 +87,9 @@ const char *printer_tx(void)
 {                               // Raw printer send
    if (psock < 0)
       return "Printer not connected";
-   if (buflen < 12)
+   if (buflen < 16)
       return "Bad tx";
-   buftxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    buflen = (buflen + 3) / 4 * 4;
    unsigned int n = buflen / 4 - 2;
    buf[4] = (n >> 24);
@@ -104,7 +112,7 @@ const char *printer_tx(void)
       ssize_t l = write(psock, buf + n, buflen - n);
       if (l <= 0)
       {
-         warn("Tx %d", l);
+         warn("Tx %ld", l);
          return "Tx fail";
       }
       n += l;
@@ -116,7 +124,7 @@ const char *printer_rx(void)
 {                               // raw printer receive
    if (psock < 0)
       return "Printer not connected";
-   bufrxcmd = 0;
+   rxcmd = 0;
    buflen = 0;
    unsigned int n = 8;
    while (buflen < n)
@@ -124,9 +132,11 @@ const char *printer_rx(void)
       if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
          errx(1, "malloc");
       ssize_t l = read(psock, buf + buflen, n - buflen);
+      if (!l && !buflen)
+         return "Printer disconnected link";
       if (l <= 0)
       {
-         warn("Rx %d", l);
+         warn("Rx %ld", l);
          return "Rx fail";
       }
       buflen += l;
@@ -143,26 +153,100 @@ const char *printer_rx(void)
          fprintf(stderr, "... (%d)", buflen);
       fprintf(stderr, "\n");
    }
-   if (buflen < 12)
+   if (buflen < 16)
       return "Bad rx length";
-   bufrxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    return NULL;
 }
 
-void printer_msg(unsigned int cmd)
+void printer_start(unsigned int cmd, unsigned int param)
 {                               // Start message
-   if (bufmax < 12 && (buf = realloc(buf, bufmax = 12)))
+   if (bufmax < 16 && !(buf = realloc(buf, bufmax = 16)))
       errx(1, "malloc");
    buf[0] = (cmd >> 24);
    buf[1] = (cmd >> 16);
    buf[2] = (cmd >> 8);
    buf[3] = (cmd);
-   buf[8] = (seq >> 24);
-   buf[9] = (seq >> 16);
-   buf[10] = (seq >> 8);
-   buf[11] = (seq);
-   seq++;
-   buflen = 12;
+   buf[8] = (param >> 24);
+   buf[9] = (param >> 16);
+   buf[10] = (param >> 8);
+   buf[11] = (param);
+   buf[12] = (seq >> 24);
+   buf[13] = (seq >> 16);
+   buf[14] = (seq >> 8);
+   buf[15] = (seq);
+   if (seq == 0x99999999)
+      seq = 0;
+   else
+      seq++;
+   buflen = 16;
+}
+
+void printer_data(unsigned int len, const unsigned char *data)
+{
+   if (bufmax < buflen + len && !(buf = realloc(buf, bufmax = buflen + len)))
+      errx(1, "malloc");
+   memcpy(buf + buflen, data, len);
+   buflen += len;
+}
+
+const char *printer_tx_check(void)
+{                               // Send and check reply
+   const char *er = printer_tx();
+   if (!er)
+      er = printer_rx();
+   if (rxerr)
+      return "Printer returned error";
+   return er;
+}
+
+const char *printer_cmd(unsigned int cmd)
+{                               // Simple command and response
+   printer_start(0xF0000100, 0);
+   unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
+   printer_data(4, c);
+   return printer_tx_check();
+}
+
+const char *check_status(void)
+{
+   return printer_cmd(0x01020000);
+}
+
+const char *check_position(void)
+{
+   const char *er = printer_cmd(0x02020000);
+   if (!er)
+   {
+      posn = buf[19];
+      if (buf[18])
+         posn = 5;
+      j_t j = j_create();
+      j_store_int(j, "position", posn);
+      er = client_tx(j);
+   }
+   return er;
+}
+
+const char *moveto(int newposn)
+{
+   const char *er = NULL;
+   if (posn == newposn)
+      return NULL;              // Nothing to do
+   if (posn == 1)
+      er = printer_cmd(0x0A024000);     // Disengage contact station
+   if (er)
+      return er;
+   if (posn == 4 || posn == 5)
+      er = printer_cmd(0x04028000 + newposn);   // Load
+   else if (newposn >= 0)
+      er = printer_cmd(0x05020000 + newposn);   // Move
+   if (er)
+      return er;
+   posn = newposn;
+   if (posn == 1)
+      er = printer_cmd(0x0A020000);     // Engage contacts
+   return er;
 }
 
 const char *client_tx(j_t j)
@@ -174,14 +258,19 @@ const char *client_tx(j_t j)
    j_err(j_write(j, client));
    fflush(client);
    j_delete(&j);
+   return NULL;
 }
 
 char *client_rx(j_t j)
-{
+{                               // Process received message
    if (debug)
       j_err(j_write_pretty(j, stderr));
+   const char *v;
+   if ((v = j_get(j, "move")))
+      moveto(atoi(v));
+   check_position();
+   return NULL;
 }
-
 
 // Main connection handling
 char *job(const char *from)
@@ -193,26 +282,66 @@ char *job(const char *from)
       er = printer_rx();
    if (er)
       return strdup(er);
-   if (buflen < 120 || bufrxcmd != 0xF3000200)
+   if (buflen < 72 || rxcmd != 0xF3000200)
       er = "Unexpected init message";
    if (!er)
    {                            // Send printer info
       j_t j = j_create();
-      j_store_string(j, "id", buf + 30);
-      j_store_stringf(j, "type", "%.16s", buf + 56);
+      j_store_string(j, "id", (char *) buf + 30);
+      int e = 16;
+      while (e && buf[56 + e - 1] == ' ')
+         e--;
+      j_store_stringf(j, "type", "%.*s", e, (char *) buf + 56);
       client_tx(j);
+      xid8600 = 0;
+      if (!memcmp(buf + 56, "XID8600", 7))
+         xid8600 = 1;
+      else if (strncmp((char *) buf + 56, "XID580", 6))
+         er = "Unknown printer type";
    }
-   // TODO threads for regular status updates?
-
+   // Send response
+   if (!er)
+   {
+      printer_start(0xF2000300, xid8600 ? 2 : 0);
+      if (xid8600)
+      {
+         static const unsigned char reply[] = {
+            0x00, 0x00, 0x00, 0x00, 0x78, 0x09, 0x09, 0x0a, 0x38, 0x21, 0x00, 0x00, 0x4f, 0x00, 0x57, 0x00,     //
+            0x4e, 0x00, 0x45, 0x00, 0x52, 0x00, 0x5f, 0x00, 0x54, 0x00, 0x4f, 0x00, 0x44, 0x00, 0x4f, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x00, 0x69, 0x00,     //
+            0x64, 0x00, 0x2e, 0x00, 0x64, 0x00, 0x6f, 0x00, 0x63, 0x00, 0x75, 0x00, 0x6d, 0x00, 0x65, 0x00,     //
+            0x6e, 0x00, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+         };
+         printer_data(sizeof(reply), reply);
+      } else
+      {
+         static const unsigned char reply[] = {
+            0x0f, 0x0a, 0x9c, 0x88, 0x73, 0x09, 0x09, 0x09, 0x0e, 0x27, 0x00, 0x00, 0x4f, 0x00, 0x57, 0x00,     //
+            0x4e, 0x00, 0x45, 0x00, 0x52, 0x00, 0x5f, 0x00, 0x54, 0x00, 0x4f, 0x00, 0x44, 0x00, 0x4f, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x00, 0x69, 0x00,     //
+            0x64, 0x00, 0x2e, 0x00, 0x64, 0x00, 0x6f, 0x00, 0x63, 0x00, 0x75, 0x00, 0x6d, 0x00, 0x65, 0x00,     //
+            0x6e, 0x00, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+         };
+         printer_data(sizeof(reply), reply);
+      }
+      er = printer_tx_check();
+   }
+   if (!er)
+      er = check_status();
+   if (!er)
+      er = check_position();
    // Handle messages both ways
    char *ers = NULL;
    if (!er)
       ers = j_stream(client, client_rx);
-   if (posn)
-   {                            // Reject card if not done
-      // TODO
-   }
-   if ((er = printer_disconnect()) && !ers)
+   if (posn != 4 && posn != 5)
+      moveto(4);                // reject
+   printer_disconnect();
+   if (!ers && er)
       ers = strdup(er);
    return ers;
 }
@@ -331,7 +460,10 @@ int main(int argc, const char *argv[])
       if (er)
       {
          j_t j = j_create();
-         j_store_string(j, "error", er);
+         j_t e = j_store_object(j, "error");
+         j_store_string(e, "description", er);
+         if (rxerr)
+            j_store_int(e, "code", rxerr);
          client_tx(j);
          free(er);
       }
