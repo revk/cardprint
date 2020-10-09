@@ -28,7 +28,8 @@ const char *printhost = NULL;   // Printer host/IP
 const char *printport = "50730";        // Printer port (this is default for XID8600)
 
 // Current connectionns
-FILE *client = NULL;            // Connected client
+FILE *clientr = NULL;           // Connected client
+FILE *clientw = NULL;           // Connected client
 int psock = -1;                 // Connected printer (ethernet)
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
@@ -156,6 +157,7 @@ const char *printer_rx(void)
    if (buflen < 16)
       return "Bad rx length";
    rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
    return NULL;
 }
 
@@ -251,12 +253,11 @@ const char *moveto(int newposn)
 
 const char *client_tx(j_t j)
 {                               // Send data to client (deletes)
-   if (!client)
+   if (!clientw)
       return "No client";
    if (debug)
       j_err(j_write_pretty(j, stderr));
-   j_err(j_write(j, client));
-   fflush(client);
+   j_err(j_write(j, clientw));  // flushes
    j_delete(&j);
    return NULL;
 }
@@ -265,10 +266,14 @@ char *client_rx(j_t j)
 {                               // Process received message
    if (debug)
       j_err(j_write_pretty(j, stderr));
-   const char *v;
-   if ((v = j_get(j, "move")))
-      moveto(atoi(v));
-   check_position();
+   const char *v,
+   *er = NULL;
+   if (!er && (v = j_get(j, "move")))
+      er = moveto(atoi(v));
+   if (!er)
+      er = check_position();
+   if (er)
+      return strdup(er);
    return NULL;
 }
 
@@ -337,7 +342,7 @@ char *job(const char *from)
    // Handle messages both ways
    char *ers = NULL;
    if (!er)
-      ers = j_stream(client, client_rx);
+      ers = j_stream(clientr, client_rx);
    if (posn != 4 && posn != 5)
       moveto(4);                // reject
    printer_disconnect();
@@ -450,8 +455,9 @@ int main(int argc, const char *argv[])
       if (debug)
          warnx("Connect from %s", from);
       char *er = NULL;
-      client = fdopen(s, "r+"); // Stream to client
-      if (!client)
+      clientr = fdopen(s, "r"); // Stream to client
+      clientw = fdopen(s, "w"); // Stream to client
+      if (!clientr)
          er = strdup("Open failed");
       if (!er)
          er = job(from);
@@ -463,12 +469,11 @@ int main(int argc, const char *argv[])
          j_t e = j_store_object(j, "error");
          j_store_string(e, "description", er);
          if (rxerr)
-            j_store_int(e, "code", rxerr);
+            j_store_stringf(e, "code", "%08X", rxerr);
          client_tx(j);
          free(er);
       }
       close(s);
-      fclose(client);
    }
 
    return 0;
