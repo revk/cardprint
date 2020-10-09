@@ -1,4 +1,6 @@
 all: printsvg cardart matica
+clean:
+	rm -f printsvg cardart matica
 
 OPTS=-g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99
 
