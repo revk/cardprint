@@ -1,4 +1,8 @@
-// Blank
+// Matica XID8600 printer back end server
+// Copyright © Adrian Kennard, Andrews & Arnold Ltd
+// This is back end designed to run on a Raspberry pi and connect to an XID8600 printer
+// It operates on a TCP socket over which back to back JSON objects are sent each way
+// This allows printing, moving cards, and access to USB connected in printer contact/contactless station
 
 #include <stdio.h>
 #include <string.h>

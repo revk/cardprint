@@ -1,4 +1,6 @@
-// Blank
+// Matica XID8600 application
+// Copyright © 2020 Adrian Kennard, Andrews & Arnold Ltd
+// This is a command line to connect to the xid8600 back end and send print files
 
 #include <stdio.h>
 #include <string.h>
