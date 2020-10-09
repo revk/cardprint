@@ -10,3 +10,5 @@ From server
 "type:type		// Printer type
 "position":position	// At position
 "error":{"description:...,"code"...}
+"print":[side1,side2] or "print":side
+side contains "C","M","Y","K","U" that are base64 coded data, and "uvsingle" boolean

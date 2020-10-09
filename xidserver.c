@@ -38,20 +38,35 @@ unsigned int txcmd = 0;         // Last tx command
 unsigned int rxcmd = 0;         // Last rx command
 unsigned int rxerr = 0;         // Last rx error
 unsigned int seq = 0;           // Sequence
+const char *error = NULL;       // Error happened (stops more processing)
+const char *status = NULL;      // Status
 int posn = 0;                   // Current card position
+int dpi = 0,
+    rows = 0,
+    cols = 0;                   // Size
 
 // Printer specific settings
 unsigned char xid8600 = 0;      // Is an XID8600
 
 const char *client_tx(j_t j);
 
+j_t j_new(void)
+{
+   j_t j = j_create();
+   if (status)
+      j_store_string(j, "status", status);
+   return j;
+}
+
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
+   error = NULL;
+   status = "Connecting";
    // TODO USB?
    seq = 0x99999999;
    txcmd = rxcmd = rxerr = 0;
    if (psock >= 0)
-      return "Printer already connected";
+      return error = "Printer already connected";
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
        *a;
@@ -72,10 +87,10 @@ const char *printer_connect(void)
       }
    }
    freeaddrinfo(res);
-   return "Could not connect to printer";
+   return error = "Could not connect to printer";
 }
 
-char *printer_disconnect(void)
+const char *printer_disconnect(void)
 {                               // Disconnect from printer
    if (psock < 0)
       return NULL;              // Not connected, that is OK
@@ -86,6 +101,8 @@ char *printer_disconnect(void)
 
 const char *printer_tx(void)
 {                               // Raw printer send
+   if (error)
+      return error;
    if (psock < 0)
       return "Printer not connected";
    if (buflen < 16)
@@ -123,6 +140,8 @@ const char *printer_tx(void)
 
 const char *printer_rx(void)
 {                               // raw printer receive
+   if (error)
+      return error;
    if (psock < 0)
       return "Printer not connected";
    rxcmd = 0;
@@ -188,22 +207,28 @@ void printer_data(unsigned int len, const unsigned char *data)
 {
    if (bufmax < buflen + len && !(buf = realloc(buf, bufmax = buflen + len)))
       errx(1, "malloc");
-   memcpy(buf + buflen, data, len);
+   if (data)
+      memcpy(buf + buflen, data, len);
+   else
+      memset(buf + buflen, 0, len);
    buflen += len;
 }
 
 const char *printer_tx_check(void)
 {                               // Send and check reply
-   const char *er = printer_tx();
-   if (!er)
-      er = printer_rx();
-   if (rxerr)
-      return "Printer returned error";
-   return er;
+   if (error)
+      return error;
+   printer_tx();
+   printer_rx();
+   if (!error && rxerr)
+      error = "Printer returned error";
+   return error;
 }
 
 const char *printer_cmd(unsigned int cmd)
 {                               // Simple command and response
+   if (error)
+      return error;
    printer_start(0xF0000100, 0);
    unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
    printer_data(4, c);
@@ -217,38 +242,46 @@ const char *check_status(void)
 
 const char *check_position(void)
 {
-   const char *er = printer_cmd(0x02020000);
-   if (!er)
+   if (error)
+      return error;
+   if (!printer_cmd(0x02020000))
    {
       posn = buf[19];
       if (buf[18])
          posn = 5;
-      j_t j = j_create();
+      j_t j = j_new();
       j_store_int(j, "position", posn);
-      er = client_tx(j);
+      client_tx(j);
    }
-   return er;
+   return error;
 }
 
 const char *moveto(int newposn)
 {
-   const char *er = NULL;
-   if (posn == newposn)
-      return NULL;              // Nothing to do
+   if (error || posn == newposn)
+      return error;             // Nothing to do
    if (posn == 1)
-      er = printer_cmd(0x0A024000);     // Disengage contact station
-   if (er)
-      return er;
+      printer_cmd(0x0A024000);  // Disengage contact station
    if (posn == 4 || posn == 5)
-      er = printer_cmd(0x04028000 + newposn);   // Load
-   else if (newposn >= 0)
-      er = printer_cmd(0x05020000 + newposn);   // Move
-   if (er)
-      return er;
+   {
+      status = "Load card";
+      printer_cmd(0x04028000 + newposn);        // Load
+   } else if (newposn >= 0)
+   {
+      if (newposn == 0)
+         status = "Printing";
+      if (newposn == 1)
+         status = "Contact encoding";
+      if (newposn == 2)
+         status = "Contactless encoding";
+      if (newposn == 4)
+         status = "Reject card";
+      printer_cmd(0x05020000 + newposn);        // Move
+   }
    posn = newposn;
    if (posn == 1)
-      er = printer_cmd(0x0A020000);     // Engage contacts
-   return er;
+      printer_cmd(0x0A020000);  // Engage contacts
+   return error;
 }
 
 const char *client_tx(j_t j)
@@ -265,47 +298,161 @@ const char *client_tx(j_t j)
 char *client_rx(j_t j)
 {                               // Process received message
    if (debug)
-      j_err(j_write_pretty(j, stderr));
-   const char *v,
-   *er = NULL;
-   if (!er && (v = j_get(j, "move")))
-      er = moveto(atoi(v));
-   if (!er)
-      er = check_position();
-   if (er)
-      return strdup(er);
+   {
+      if (j_find(j, "print"))
+         warnx("Print rx not dumped");
+      else
+         j_err(j_write_pretty(j, stderr));
+   }
+   const char *v;
+   if ((v = j_get(j, "move")))
+      moveto(atoi(v));
+   j_t print = j_find(j, "print");
+   if (print)
+   {
+      unsigned char printed = 0;
+      unsigned char side = 0;
+      moveto(0);                // ready to print
+      const char *print_side(j_t panel) {
+         if (error)
+            return error;
+         if (!panel)
+            return NULL;
+         static const char *panelname[8] = { "Y", "M", "C", "K", "P", "Q", "U", "Z" };  // No idea what the extra panels are, but why not have them...
+         unsigned char found = 0;
+         unsigned char *data[8] = { };
+         for (int p = 0; p < 8; p++)
+         {                      // Load panel data
+            const char *d = j_get(panel, panelname[p]);
+            if (!d)
+               continue;
+            int l = j_base64d(d, &data[p]);
+            if (l != rows * cols)
+            {
+               error = "Wrong print data size";
+               break;
+            }
+            for (l = 0; l < rows * cols && !data[p][l]; l++);
+            if (l == rows * cols)
+            {
+               free(data[p]);
+               data[p] = NULL;
+            } else
+               found |= (1 << p);
+         }
+         if (!found)
+            return NULL;
+         if (side)
+         {
+            status = "Second side";
+            client_tx(j_new());
+            printer_cmd(printed ? 0x07021000 : 0x05021000);     // Retransfer and flip if printed, else just flip
+         }
+         status = "Printing";
+         client_tx(j_new());
+         printed = 0;
+         for (int p = 0; p < 8; p++)
+            if ((p < 3 && (found & 7)) || (found & (1 << p)))
+            {                   // Send panel
+               printer_start(0xF0000200, 0);
+               unsigned char temp[12] = { };
+               int len = rows * cols + 4;
+               temp[0] = (p == 4 ? 0x40 : (1 << p));
+               temp[4] = (len >> 24);
+               temp[5] = (len >> 16);
+               temp[6] = (len >> 8);
+               temp[7] = (len);
+               len -= 4;
+               temp[8] = (len >> 24);
+               temp[9] = (len >> 16);
+               temp[10] = (len >> 8);
+               temp[11] = (len);
+               printer_data(12, temp);
+               printer_data(rows * cols, data[p]);
+               printer_tx_check();
+               printed |= (p == 4 ? 0x40 : (1 << p));
+            }
+         if (printed)
+         {
+            if (j_test(panel, "uvsingle", 0))
+               printer_cmd(0x06020000 + printed);       // UV printed with rest, no special handling
+            else
+            {                   // UV printed separately
+               if (printed & 0x0F)
+                  printer_cmd(0x06020000 + (printed & 0x0F));   // Non UV, if any
+               if (printed & 0x40)
+               {                // UV
+                  status = "UV";
+                  client_tx(j_new());
+                  if (printed & 0x0F)
+                     printer_cmd(0x07020000);   // first transfer of non UV
+                  printer_cmd(0x06020000 + (printed & 0x40));   // UV print
+                  printed &= 0x40;
+               }
+            }
+         }
+         side++;
+         return NULL;
+      }
+      if (j_isobject(print))
+         print_side(print);
+      else if (j_isarray(print))
+      {
+         print_side(j_index(print, 0));
+         print_side(j_index(print, 1));
+      }
+      if (printed)
+      {
+         status = "Transfer";
+         client_tx(j_new());
+         printer_cmd(0x07020005);       // Eject, print done
+         status = "Printed";
+      } else
+      {
+         printer_cmd(0x05020004);       // Reject - nothing was printed
+         status = "Rejected";
+      }
+      client_tx(j_new());
+   }
+   check_position();
+   if (error)
+      return strdup(error);
    return NULL;
 }
 
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
-   const char *er = NULL;
    // Connect to printer, get answer back, report to client
-   er = printer_connect();
-   if (!er)
-      er = printer_rx();
-   if (er)
-      return strdup(er);
-   if (buflen < 72 || rxcmd != 0xF3000200)
-      er = "Unexpected init message";
-   if (!er)
+   printer_connect();
+   printer_rx();
+   if (!error && (buflen < 72 || rxcmd != 0xF3000200))
+      error = "Unexpected init message";
+   status = "Connected";
+   if (!error)
    {                            // Send printer info
-      j_t j = j_create();
+      j_t j = j_new();
       j_store_string(j, "id", (char *) buf + 30);
       int e = 16;
       while (e && buf[56 + e - 1] == ' ')
          e--;
       j_store_stringf(j, "type", "%.*s", e, (char *) buf + 56);
-      client_tx(j);
       xid8600 = 0;
       if (!memcmp(buf + 56, "XID8600", 7))
          xid8600 = 1;
       else if (strncmp((char *) buf + 56, "XID580", 6))
-         er = "Unknown printer type";
+         error = "Unknown printer type";
+      dpi = (xid8600 ? 600 : 300);
+      rows = (xid8600 ? 1328 : 664);
+      cols = (xid8600 ? 2072 : 1036);
+      j_store_int(j, "rows", rows);
+      j_store_int(j, "cols", cols);
+      j_store_int(j, "dpi", dpi);
+      client_tx(j);
+      // TODO would be nice if this included ribbon type
    }
    // Send response
-   if (!er)
+   if (!error)
    {
       printer_start(0xF2000300, xid8600 ? 2 : 0);
       if (xid8600)
@@ -333,21 +480,19 @@ char *job(const char *from)
          };
          printer_data(sizeof(reply), reply);
       }
-      er = printer_tx_check();
+      printer_tx_check();
    }
-   if (!er)
-      er = check_status();
-   if (!er)
-      er = check_position();
+   check_status();
+   check_position();
    // Handle messages both ways
    char *ers = NULL;
-   if (!er)
+   if (!error)
       ers = j_stream(clientr, client_rx);
    if (posn != 4 && posn != 5)
       moveto(4);                // reject
    printer_disconnect();
-   if (!ers && er)
-      ers = strdup(er);
+   if (!ers && error)
+      ers = strdup(error);
    return ers;
 }
 
@@ -455,9 +600,9 @@ int main(int argc, const char *argv[])
       if (debug)
          warnx("Connect from %s", from);
       char *er = NULL;
-      clientr = fdopen(s, "r"); // Stream to client
+      clientr = fdopen(s, "r"); // Stream from client
       clientw = fdopen(s, "w"); // Stream to client
-      if (!clientr)
+      if (!clientr || !clientw)
          er = strdup("Open failed");
       if (!er)
          er = job(from);
@@ -465,7 +610,7 @@ int main(int argc, const char *argv[])
          warnx("Finished %s: %s", from, er ? : "OK");
       if (er)
       {
-         j_t j = j_create();
+         j_t j = j_new();
          j_t e = j_store_object(j, "error");
          j_store_string(e, "description", er);
          if (rxerr)
@@ -473,6 +618,8 @@ int main(int argc, const char *argv[])
          client_tx(j);
          free(er);
       }
+      fclose(clientr);
+      fclose(clientw);
       close(s);
    }
 
