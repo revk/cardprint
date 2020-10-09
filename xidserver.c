@@ -40,6 +40,7 @@ unsigned int rxerr = 0;         // Last rx error
 unsigned int seq = 0;           // Sequence
 const char *error = NULL;       // Error happened (stops more processing)
 const char *status = NULL;      // Status
+int queue = 0;                  // Command queue
 int posn = 0;                   // Current card position
 int dpi = 0,
     rows = 0,
@@ -60,6 +61,7 @@ j_t j_new(void)
 
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
+   queue = 0;
    error = NULL;
    status = "Connecting";
    // TODO USB?
@@ -107,6 +109,7 @@ const char *printer_tx(void)
       return "Printer not connected";
    if (buflen < 16)
       return "Bad tx";
+   queue++;
    txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    buflen = (buflen + 3) / 4 * 4;
    unsigned int n = buflen / 4 - 2;
@@ -140,6 +143,8 @@ const char *printer_tx(void)
 
 const char *printer_rx(void)
 {                               // raw printer receive
+   if (queue)
+      queue--;
    if (error)
       return error;
    if (psock < 0)
@@ -219,29 +224,46 @@ const char *printer_tx_check(void)
    if (error)
       return error;
    printer_tx();
-   printer_rx();
+   while (queue)
+      printer_rx();             // Catch up
    if (!error && rxerr)
       error = "Printer returned error";
    return error;
 }
 
-const char *printer_cmd(unsigned int cmd)
-{                               // Simple command and response
+const char *printer_start_cmd(unsigned int cmd)
+{
    if (error)
       return error;
    printer_start(0xF0000100, 0);
    unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
    printer_data(4, c);
+   return NULL;
+}
+
+const char *printer_queue_cmd(unsigned int cmd)
+{
+   printer_start_cmd(cmd);
+   return printer_tx();
+}
+
+const char *printer_cmd(unsigned int cmd)
+{                               // Simple command and response
+   printer_start_cmd(cmd);
    return printer_tx_check();
 }
 
 const char *check_status(void)
 {
+   while (queue)
+      printer_rx();
    return printer_cmd(0x01020000);
 }
 
 const char *check_position(void)
 {
+   while (queue)
+      printer_rx();
    if (error)
       return error;
    if (!printer_cmd(0x02020000))
@@ -312,7 +334,10 @@ char *client_rx(j_t j)
    {
       unsigned char printed = 0;
       unsigned char side = 0;
-      moveto(0);                // ready to print
+      if (posn == 5)
+         printer_queue_cmd(0x04028000); // not loaded - queue load
+      else
+         moveto(0);             // ready to print
       const char *print_side(j_t panel) {
          if (error)
             return error;
@@ -346,10 +371,8 @@ char *client_rx(j_t j)
          {
             status = "Second side";
             client_tx(j_new());
-            printer_cmd(printed ? 0x07021000 : 0x05021000);     // Retransfer and flip if printed, else just flip
+            printer_queue_cmd(printed ? 0x07021000 : 0x05021000);       // Retransfer and flip if printed, else just flip
          }
-         status = "Printing";
-         client_tx(j_new());
          printed = 0;
          for (int p = 0; p < 8; p++)
             if ((p < 3 && (found & 7)) || (found & (1 << p)))
@@ -369,7 +392,7 @@ char *client_rx(j_t j)
                temp[11] = (len);
                printer_data(12, temp);
                printer_data(rows * cols, data[p]);
-               printer_tx_check();
+               printer_tx();
                printed |= (p == 4 ? 0x40 : (1 << p));
             }
          if (printed)
@@ -379,14 +402,14 @@ char *client_rx(j_t j)
             else
             {                   // UV printed separately
                if (printed & 0x0F)
-                  printer_cmd(0x06020000 + (printed & 0x0F));   // Non UV, if any
+                  printer_queue_cmd(0x06020000 + (printed & 0x0F));     // Non UV, if any
                if (printed & 0x40)
                {                // UV
                   status = "UV";
                   client_tx(j_new());
                   if (printed & 0x0F)
-                     printer_cmd(0x07020000);   // first transfer of non UV
-                  printer_cmd(0x06020000 + (printed & 0x40));   // UV print
+                     printer_queue_cmd(0x07020000);     // first transfer of non UV
+                  printer_queue_cmd(0x06020000 + (printed & 0x40));     // UV print
                   printed &= 0x40;
                }
             }
@@ -405,12 +428,8 @@ char *client_rx(j_t j)
       {
          status = "Transfer";
          client_tx(j_new());
-         printer_cmd(0x07020005);       // Eject, print done
+         printer_cmd(0x07020005);
          status = "Printed";
-      } else
-      {
-         printer_cmd(0x05020004);       // Reject - nothing was printed
-         status = "Rejected";
       }
       client_tx(j_new());
    }
@@ -488,8 +507,8 @@ char *job(const char *from)
    char *ers = NULL;
    if (!error)
       ers = j_stream(clientr, client_rx);
-   if (posn != 4 && posn != 5)
-      moveto(4);                // reject
+   if (error)
+      moveto(4);
    printer_disconnect();
    if (!ers && error)
       ers = strdup(error);
