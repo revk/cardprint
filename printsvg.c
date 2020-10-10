@@ -460,11 +460,11 @@ int main(int argc, const char *argv[])
             return strdup("Rows mismatch");
          if ((v = j_get(i, "cols")) && atoi(v) != cols)
             return strdup("Cols mismatch");
-         if (j_find(i, "id")&&j)
-	 { // Send print
-            j_err(j_write_func(j, ss_write_func, ss)); 
-	    j_delete(&j);
-	 }
+         if (j_find(i, "id") && j)
+         {                      // Send print
+            j_err(j_write_func(j, ss_write_func, ss));
+            j_delete(&j);
+         }
          return NULL;
       }
       char *er = j_stream_func(ss_read_func, ss, jin);
