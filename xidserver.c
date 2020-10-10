@@ -212,6 +212,37 @@ const char *printer_rx(void)
    return NULL;
 }
 
+const char *printer_rx_check(void)
+{
+   if (error)
+      return error;
+   printer_rx();
+   if (!error && rxerr)
+   {
+      if (rxerr == 0x0002DB00)
+         error = "Initialising, not ready";
+      else if (rxerr == 0x0002DA00)
+         error = "Warming up, not ready";
+      else if (rxerr == 0x0002D100)
+         error = "Door open";
+      else if (rxerr == 0x0003A100)
+         error = "Transfer film missing";
+      else if (rxerr == 0x0003B000)
+         error = "Colour film missing";
+      else if (rxerr == 0x0002D000)
+         error = "No cards";
+      else if (rxerr == 0x00039000)
+         error = "Hopper jam";
+      else if (rxerr == 0x00052600)
+         error = "Mag read fail";
+      else if (rxerr == 0x0003AD00)
+         error = "Mag write fail";
+      else
+         error = "Printer returned error (see code)";
+   }
+   return error;
+}
+
 void printer_start(unsigned int cmd, unsigned int param)
 {                               // Start message
    if (bufmax < 16 && !(buf = realloc(buf, bufmax = 16)))
@@ -252,26 +283,7 @@ const char *printer_tx_check(void)
       return error;
    printer_tx();
    while (queue)
-      printer_rx();             // Catch up
-   if (!error && rxerr)
-   {
-      if (rxerr == 0x0002DB00)
-         error = "Initialising, not ready";
-      else if (rxerr == 0x0002DA00)
-         error = "Warming up, not ready";
-      else if (rxerr == 0x0002D100)
-         error = "Door open";
-      else if (rxerr == 0x0003A100)
-         error = "Transfer film missing";
-      else if (rxerr == 0x0003B000)
-         error = "Colour film missing";
-      else if (rxerr == 0x0002D000)
-         error = "No cards";
-      else if (rxerr == 0x00039000)
-         error = "Hopper jam";
-      else
-         error = "Printer returned error (see code)";
-   }
+      printer_rx_check();       // Catch up
    return error;
 }
 
@@ -282,6 +294,7 @@ const char *printer_start_cmd(unsigned int cmd)
    printer_start(0xF0000100, 0);
    unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
    printer_data(4, c);
+   // Not cmd is 8 bit command, 8 bit byte length of remaining data, then data, usually after 2 null bytes
    return NULL;
 }
 
@@ -300,14 +313,14 @@ const char *printer_cmd(unsigned int cmd)
 const char *check_status(void)
 {
    while (queue)
-      printer_rx();
+      printer_rx_check();
    return printer_cmd(0x01020000);
 }
 
 const char *check_position(void)
 {
    while (queue)
-      printer_rx();
+      printer_rx_check();
    if (error)
       return error;
    if (!printer_cmd(0x02020000))
@@ -326,7 +339,7 @@ const char *moveto(int newposn)
    if (error || posn == newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
-      printer_cmd(0x0A024000);  // Disengage contact station
+      printer_queue_cmd(0x0A024000);    // Disengage contact station
    if (posn < 0)
    {                            // not in machine
       if (newposn == POS_EJECT)
@@ -336,7 +349,7 @@ const char *moveto(int newposn)
       else
       {
          status = "Load card";
-         printer_cmd(0x04028000 + newposn);     // Load
+         printer_queue_cmd(0x04028000 + newposn);       // Load
       }
    } else if (newposn >= 0)
    {
@@ -348,11 +361,11 @@ const char *moveto(int newposn)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      printer_cmd(0x05020000 + newposn);        // Move
+      printer_queue_cmd(0x05020000 + newposn);  // Move
    }
    posn = newposn;
    if (posn == POS_IC)
-      printer_cmd(0x0A020000);  // Engage contacts
+      printer_queue_cmd(0x0A020000);    // Engage contacts
    if (posn == POS_EJECT || posn == POS_REJECT)
       posn = POS_OUT;           // Out of machine
    return error;
@@ -391,7 +404,89 @@ char *client_rx(j_t j)
    j_t cmd = NULL;
    if ((cmd = j_find(j, "mag")))
    {
-      // TODO
+      unsigned char temp[66 * 3];
+      int p = 0;
+      int c = 0;
+      void encode(unsigned char tag, j_t j) {
+         const char *v = "";
+         int len = 1;
+         if (j_isstring(j))
+         {
+            v = j_val(j);
+            len = j_len(j);
+         }
+         if (len > 64)
+            error = "Mag track too long";
+         else
+         {
+            temp[p++] = tag;
+            temp[p++] = len;
+            if ((tag & 0xF) == 6)
+               for (int q = 0; q < len; q++)
+                  temp[p++] = ((v[q] & 0x3F) ^ 0x20);
+            else
+               for (int q = 0; q < len; q++)
+                  temp[p++] = (v[q] & 0xF);
+            c++;
+         }
+      }
+      if (j_isstring(cmd))
+      {
+         encode(0x16, NULL);
+         encode(0x24, cmd);
+         encode(0x34, NULL);
+      } else if (j_isarray(cmd))
+      {
+         encode(0x16, j_index(cmd, 0));
+         encode(0x24, j_index(cmd, 1));
+         encode(0x34, j_index(cmd, 2));
+      }
+      if (c)
+      {
+         status = "Encoding";
+         client_tx(j_new());
+         moveto(POS_MAG);
+         check_position();
+         printer_start_cmd(0x09000000 + ((p + 2) << 16) + c);
+         printer_data(p, temp);
+         printer_tx_check();
+         status = "Encoded";
+         client_tx(j_new());
+      }
+      // Read
+      status = "Reading";
+      client_tx(j_new());
+      moveto(POS_MAG);
+      check_position();
+      status = "Read done";
+      {
+         unsigned char temp[4] = { 0x24, 0x34 };
+         printer_start_cmd(0x08060016);
+         printer_data(4, temp);
+      }
+      printer_tx();
+      printer_rx();
+      if (!rxerr)
+      {
+         j_t j = j_new();
+         j_t m = j_store_array(j, "mag");
+         int p = 20;
+         int c = buf[p++];
+         while (c--)
+         {
+            unsigned char tag = buf[p++];
+            unsigned char len = buf[p++];
+            if ((tag & 0xF) == 6)
+               for (int q = 0; q < len; q++)
+                  buf[p + q] = (buf[p + q] & 0x3F) ^ 0x20;
+            else
+               for (int q = 0; q < len; q++)
+                  buf[p + q] = (buf[p + q] & 0xF) + '0';
+            j_append_stringn(m, (char *) buf + p, len);
+            p += len;
+         }
+         client_tx(j);
+      }
    }
    if ((cmd = j_find(j, "ic")))
    {
@@ -405,10 +500,7 @@ char *client_rx(j_t j)
    {
       unsigned char printed = 0;
       unsigned char side = 0;
-      if (posn < 0)
-         printer_queue_cmd(0x04028000 + (posn = POS_PRINT));    // not loaded - queue load
-      else
-         moveto(POS_PRINT);     // ready to print
+      moveto(POS_PRINT);        // ready to print
       const char *print_side(j_t panel) {
          if (error)
             return error;
@@ -509,12 +601,17 @@ char *client_rx(j_t j)
          client_tx(j_new());
          printer_cmd(0x07020000 + (posn = POS_EJECT));
          status = "Printed";
+      } else
+      {
+         moveto(POS_EJECT);     // Done anyway
+         status = "Unprinted";
       }
    } else if ((cmd = j_find(j, "reject")))
       moveto(POS_REJECT);
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
    check_position();
+   client_tx(j_new());
    if (error)
       return strdup(error);
    if (posn < 0)
@@ -527,15 +624,17 @@ char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
    // Connect to printer, get answer back, report to client
    printer_connect();
-   printer_rx();
+   printer_rx_check();
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
    status = "Connected";
-   char id[17] = { };
+   char id[13] = { };
    char type[17] = { };
    if (!error)
    {                            // Send printer info
-      strncpy(id, (char *) buf + 30, sizeof(id));
+      // Note IPv4 at 40
+      // Note IPv6 at 72
+      strncpy(id, (char *) buf + 30, sizeof(id) - 1);
       strncpy(type, (char *) buf + 56, sizeof(type) - 1);
       int e = strlen(type);
       while (e && type[e - 1] == ' ')
@@ -550,8 +649,6 @@ char *job(const char *from)
       dpi = (xid8600 ? 600 : 300);
       rows = (xid8600 ? 1328 : 664);
       cols = (xid8600 ? 2072 : 1036);
-      // TODO would be nice if this included ribbon type?
-      // TODO can we tell what devices connected?
    }
    // Send response
    if (!error)
@@ -585,6 +682,7 @@ char *job(const char *from)
       printer_tx_check();
    }
    check_status();
+   check_position();
    j_t j = j_new();
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
@@ -592,16 +690,25 @@ char *job(const char *from)
    j_store_int(j, "cols", cols);
    j_store_int(j, "dpi", dpi);
    client_tx(j);
-   check_position();
    // Handle messages both ways
    char *ers = NULL;
    if (!error)
       ers = j_stream_func(ss_read_func, ss, client_rx);
-   if (error)
-      moveto(POS_REJECT);
-   printer_disconnect();
+   if (!error && posn >= 0)
+   {
+      moveto(POS_EJECT);
+      printer_rx_check();
+   }
    if (!ers && error)
       ers = strdup(error);
+   if (error)
+   {
+      error = NULL;
+      check_position();
+      moveto(POS_REJECT);
+      printer_rx();
+   }
+   printer_disconnect();
    return ers;
 }
 
