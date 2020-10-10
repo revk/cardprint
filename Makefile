@@ -1,4 +1,4 @@
-TARGETS=printsvg cardart matica xidserver xid
+TARGETS=printsvg cardart matica xidserver
 
 all: ${TARGETS}
 clean:
@@ -24,13 +24,10 @@ matica: matica.c AXL/axl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o -lcurl
 
 printsvg: printsvg.c AXL/axl.o AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl
+	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl -pthread -lssl
 
 cardart: cardart.c 
 	cc -O -o $@ $< ${OPTS} -lpopt
 
-xid: xid.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o
-
 xidserver: xidserver.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o  -pthread -lssl
+	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o -pthread -lssl

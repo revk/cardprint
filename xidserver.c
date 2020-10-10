@@ -26,13 +26,14 @@
 
 const char *pos_name[] = { "print", "ic", "rfid", "mag" };
 
+#define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
 #define	POS_PRINT	0
 #define	POS_IC		1
 #define	POS_RFID	2
 #define	POS_MAG		3
-#define	POS_EJECT	4
-#define	POS_REJECT	5
+#define	POS_REJECT	4
+#define	POS_EJECT	5
 
 // Config
 int debug = 0;                  // Top level debug
@@ -75,6 +76,7 @@ j_t j_new(void)
 
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
+   posn = POS_UNKNOWN;
    queue = 0;
    error = NULL;
    status = "Connecting";
@@ -97,13 +99,15 @@ const char *printer_connect(void)
          if (!connect(s, a->ai_addr, a->ai_addrlen))
          {
             psock = s;
-            return NULL;        // Connected
+            break;
          }
          close(s);
       }
    }
    freeaddrinfo(res);
-   return error = "Could not connect to printer";
+   if (psock < 0)
+      return error = "Could not connect to printer";
+   return NULL;
 }
 
 const char *printer_disconnect(void)
@@ -147,7 +151,7 @@ const char *printer_tx(void)
       ssize_t l = write(psock, buf + n, buflen - n);
       if (l <= 0)
       {
-         warn("Tx %d", l);
+         warn("Tx %d", (int) l);
          return "Tx fail";
       }
       n += l;
@@ -175,7 +179,7 @@ const char *printer_rx(void)
          return "Printer disconnected link";
       if (l <= 0)
       {
-         warn("Rx %d", l);
+         warn("Rx %d", (int) l);
          return "Rx fail";
       }
       buflen += l;
@@ -310,8 +314,8 @@ const char *moveto(int newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
       printer_cmd(0x0A024000);  // Disengage contact station
-   if (posn == POS_OUT)
-   {
+   if (posn < 0)
+   {                            // not in machine
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
@@ -374,19 +378,22 @@ char *client_rx(j_t j)
    j_t cmd = NULL;
    if ((cmd = j_find(j, "mag")))
    {
+      // TODO
    }
    if ((cmd = j_find(j, "ic")))
    {
+      // TODO
    }
    if ((cmd = j_find(j, "rfid")))
    {
+      // TODO
    }
    if ((cmd = j_find(j, "print")))
    {
       unsigned char printed = 0;
       unsigned char side = 0;
-      if (posn == POS_OUT)
-         printer_queue_cmd(0x04028000); // not loaded - queue load
+      if (posn < 0)
+         printer_queue_cmd(0x04028000 + (posn = POS_PRINT));    // not loaded - queue load
       else
          moveto(POS_PRINT);     // ready to print
       const char *print_side(j_t panel) {
@@ -423,6 +430,10 @@ char *client_rx(j_t j)
             status = "Second side";
             client_tx(j_new());
             printer_queue_cmd(printed ? 0x07021000 : 0x05021000);       // Retransfer and flip if printed, else just flip
+         } else
+         {
+            status = "First side";
+            client_tx(j_new());
          }
          printed = 0;
          for (int p = 0; p < 8; p++)
@@ -479,7 +490,7 @@ char *client_rx(j_t j)
       {
          status = "Transfer";
          client_tx(j_new());
-         printer_cmd(0x07020000 + (j_find(j, "reject") ? POS_REJECT : POS_EJECT));
+         printer_cmd(0x07020000 + POS_EJECT);
          status = "Printed";
       }
       client_tx(j_new());
@@ -490,7 +501,7 @@ char *client_rx(j_t j)
    check_position();
    if (error)
       return strdup(error);
-   if (posn == POS_OUT)
+   if (posn == POS_OUT || error)
       return strdup("");        // Done
    return NULL;
 }
