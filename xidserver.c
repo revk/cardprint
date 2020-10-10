@@ -24,6 +24,16 @@
 
 // As this is single threader operation, on job at a time, we are using globals :-)
 
+const char *pos_name[] = { "print", "ic", "rfid", "mag" };
+
+#define	POS_OUT		-1
+#define	POS_PRINT	0
+#define	POS_IC		1
+#define	POS_RFID	2
+#define	POS_MAG		3
+#define	POS_EJECT	4
+#define	POS_REJECT	5
+
 // Config
 int debug = 0;                  // Top level debug
 const char *printhost = NULL;   // Printer host/IP
@@ -59,7 +69,7 @@ j_t j_new(void)
    j_t j = j_create();
    if (status)
       j_store_string(j, "status", status);
-   j_store_int(j, "position", posn);
+   j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
    return j;
 }
 
@@ -287,7 +297,7 @@ const char *check_position(void)
    {
       posn = buf[19];
       if (buf[18])
-         posn = 5;
+         posn = POS_OUT;
       j_t j = j_new();
       client_tx(j);
    }
@@ -298,27 +308,36 @@ const char *moveto(int newposn)
 {
    if (error || posn == newposn)
       return error;             // Nothing to do
-   if (posn == 1)
+   if (posn == POS_IC)
       printer_cmd(0x0A024000);  // Disengage contact station
-   if (posn == 4 || posn == 5)
+   if (posn == POS_OUT)
    {
-      status = "Load card";
-      printer_cmd(0x04028000 + newposn);        // Load
+      if (newposn == POS_EJECT)
+         error = "Cannot eject card, not loaded";
+      else if (newposn == POS_REJECT)
+         error = "Cannot reject card, not loaded";
+      else
+      {
+         status = "Load card";
+         printer_cmd(0x04028000 + newposn);     // Load
+      }
    } else if (newposn >= 0)
    {
-      if (newposn == 0)
+      if (newposn == POS_PRINT)
          status = "Printing";
-      if (newposn == 1)
-         status = "Contact encoding";
-      if (newposn == 2)
-         status = "Contactless encoding";
-      if (newposn == 4)
+      if (newposn == POS_IC)
+         status = "IC encoding";
+      if (newposn == POS_RFID)
+         status = "RFID encoding";
+      if (newposn == POS_REJECT)
          status = "Reject card";
       printer_cmd(0x05020000 + newposn);        // Move
    }
    posn = newposn;
-   if (posn == 1)
+   if (posn == POS_IC)
       printer_cmd(0x0A020000);  // Engage contacts
+   if (posn == POS_EJECT || posn == POS_REJECT)
+      posn = POS_OUT;           // Out of machine
    return error;
 }
 
@@ -352,18 +371,24 @@ char *client_rx(j_t j)
       else
          j_err(j_write_pretty(j, stderr));
    }
-   const char *v;
-   if ((v = j_get(j, "move")))
-      moveto(atoi(v));
-   j_t print = j_find(j, "print");
-   if (print)
+   j_t cmd = NULL;
+   if ((cmd = j_find(j, "mag")))
+   {
+   }
+   if ((cmd = j_find(j, "ic")))
+   {
+   }
+   if ((cmd = j_find(j, "rfid")))
+   {
+   }
+   if ((cmd = j_find(j, "print")))
    {
       unsigned char printed = 0;
       unsigned char side = 0;
-      if (posn == 5)
+      if (posn == POS_OUT)
          printer_queue_cmd(0x04028000); // not loaded - queue load
       else
-         moveto(0);             // ready to print
+         moveto(POS_PRINT);     // ready to print
       const char *print_side(j_t panel) {
          if (error)
             return error;
@@ -443,26 +468,29 @@ char *client_rx(j_t j)
          side++;
          return NULL;
       }
-      if (j_isobject(print))
-         print_side(print);
-      else if (j_isarray(print))
+      if (j_isobject(cmd))
+         print_side(cmd);
+      else if (j_isarray(cmd))
       {
-         print_side(j_index(print, 0));
-         print_side(j_index(print, 1));
+         print_side(j_index(cmd, 0));
+         print_side(j_index(cmd, 1));
       }
       if (printed)
       {
          status = "Transfer";
          client_tx(j_new());
-         printer_cmd(0x07020005);
+         printer_cmd(0x07020000 + (j_find(j, "reject") ? POS_REJECT : POS_EJECT));
          status = "Printed";
       }
       client_tx(j_new());
-   }
+   } else if ((cmd = j_find(j, "reject")))
+      moveto(POS_REJECT);
+   else if ((cmd = j_find(j, "eject")))
+      moveto(POS_EJECT);
    check_position();
    if (error)
       return strdup(error);
-   if (posn == 5)
+   if (posn == POS_OUT)
       return strdup("");        // Done
    return NULL;
 }
@@ -536,7 +564,7 @@ char *job(const char *from)
    if (!error)
       ers = j_stream_func(ss_read_func, ss, client_rx);
    if (error)
-      moveto(4);
+      moveto(POS_REJECT);
    printer_disconnect();
    if (!ers && error)
       ers = strdup(error);
