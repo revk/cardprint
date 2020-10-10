@@ -70,9 +70,16 @@ j_t j_new(void)
 {
    j_t j = j_create();
    if (status)
-      j_store_string(j, "status", status);
+      j_store_string(j, "status", error ? "Error" : status);
    if (posn != POS_UNKNOWN)
       j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
+   if (error)
+   {
+      j_t e = j_store_object(j, "error");
+      j_store_string(e, "description", error);
+      if (rxerr)
+         j_store_stringf(e, "code", "%08X", rxerr);
+   }
    return j;
 }
 
@@ -524,26 +531,25 @@ char *job(const char *from)
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
    status = "Connected";
+   char id[17] = { };
+   char type[17] = { };
    if (!error)
    {                            // Send printer info
-      j_t j = j_new();
-      j_store_string(j, "id", (char *) buf + 30);
-      int e = 16;
-      while (e && buf[56 + e - 1] == ' ')
+      strncpy(id, (char *) buf + 30, sizeof(id));
+      strncpy(type, (char *) buf + 56, sizeof(type) - 1);
+      int e = strlen(type);
+      while (e && type[e - 1] == ' ')
          e--;
-      j_store_stringf(j, "type", "%.*s", e, (char *) buf + 56);
-      xid8600 = 0;
-      if (!memcmp(buf + 56, "XID8600", 7))
+      type[e] = 0;
+      if (!strcmp(type, "XID8600"))
          xid8600 = 1;
-      else if (strncmp((char *) buf + 56, "XID580", 6))
+      else if (!strncmp(type, "XID580", 6))
+         xid8600 = 0;
+      else
          error = "Unknown printer type";
       dpi = (xid8600 ? 600 : 300);
       rows = (xid8600 ? 1328 : 664);
       cols = (xid8600 ? 2072 : 1036);
-      j_store_int(j, "rows", rows);
-      j_store_int(j, "cols", cols);
-      j_store_int(j, "dpi", dpi);
-      client_tx(j);
       // TODO would be nice if this included ribbon type?
       // TODO can we tell what devices connected?
    }
@@ -579,6 +585,13 @@ char *job(const char *from)
       printer_tx_check();
    }
    check_status();
+   j_t j = j_new();
+   j_store_string(j, "id", id);
+   j_store_string(j, "type", type);
+   j_store_int(j, "rows", rows);
+   j_store_int(j, "cols", cols);
+   j_store_int(j, "dpi", dpi);
+   client_tx(j);
    check_position();
    // Handle messages both ways
    char *ers = NULL;
@@ -741,10 +754,6 @@ int main(int argc, const char *argv[])
       if (er && *er)
       {
          j_t j = j_new();
-         j_t e = j_store_object(j, "error");
-         j_store_string(e, "description", er);
-         if (rxerr)
-            j_store_stringf(e, "code", "%08X", rxerr);
          client_tx(j);
       }
       if (er)

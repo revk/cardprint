@@ -457,7 +457,12 @@ int main(int argc, const char *argv[])
          if (jsstatus && (v = j_get(i, "status")))
             printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
          if (j_find(i, "error"))
-            return strdup(j_get(i, "error.description"));
+         {
+            v = strdup(j_get(i, "error.description"));
+            if (jsstatus)
+               printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+            return (char *) v;
+         }
          if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
             return strdup("DPI mismatch");
          if ((v = j_get(i, "rows")) && atoi(v) != rows)
