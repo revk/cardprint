@@ -502,7 +502,6 @@ char *client_rx(j_t j)
       moveto(POS_REJECT);
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
-   warnx("posn=%d error=%s",posn,error); // TODO
    check_position();
    if (error)
       return strdup(error);
