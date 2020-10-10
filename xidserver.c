@@ -24,7 +24,7 @@
 
 // As this is single threader operation, on job at a time, we are using globals :-)
 
-const char *pos_name[] = { "print", "ic", "rfid", "mag" };
+const char *pos_name[] = { "print", "ic", "rfid", "mag","reject","eject" };
 
 #define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
@@ -490,7 +490,7 @@ char *client_rx(j_t j)
       {
          status = "Transfer";
          client_tx(j_new());
-         printer_cmd(0x07020000 + POS_EJECT);
+         printer_cmd(0x07020000 + (posn=POS_EJECT));
          status = "Printed";
       }
       client_tx(j_new());
@@ -501,7 +501,7 @@ char *client_rx(j_t j)
    check_position();
    if (error)
       return strdup(error);
-   if (posn == POS_OUT || error)
+   if (posn <0)
       return strdup("");        // Done
    return NULL;
 }
@@ -588,6 +588,7 @@ int main(int argc, const char *argv[])
    const char *bindhost = NULL;
    const char *port = "7810";
    int background = 0;
+   int single=0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -598,6 +599,7 @@ int main(int argc, const char *argv[])
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
+         { "single", 0, POPT_ARG_NONE|POPT_ARGFLAG_DOC_HIDDEN, &single, 0, "Single run (for memory debug)" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -740,6 +742,7 @@ int main(int argc, const char *argv[])
       SSL_free(ss);
       ss = NULL;
       close(s);
+      if(single)break; // debug one run
    }
 
    return 0;
