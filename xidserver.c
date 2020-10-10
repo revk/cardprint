@@ -24,7 +24,7 @@
 
 // As this is single threader operation, on job at a time, we are using globals :-)
 
-const char *pos_name[] = { "print", "ic", "rfid", "mag","reject","eject" };
+const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
 
 #define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
@@ -70,7 +70,8 @@ j_t j_new(void)
    j_t j = j_create();
    if (status)
       j_store_string(j, "status", status);
-   j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
+   if (posn != POS_UNKNOWN)
+      j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
    return j;
 }
 
@@ -137,10 +138,10 @@ const char *printer_tx(void)
    buf[7] = (n);
    if (debug)
    {
-      fprintf(stderr, "Tx:");
+      fprintf(stderr, "Tx%d:",queue);
       int i = 0;
       for (i = 0; i < buflen && i < 200; i++)
-         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n    " : (i & 3) ? "" : " ", buf[i]);
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
       if (i < buflen)
          fprintf(stderr, "... (%d)", buflen);
       fprintf(stderr, "\n");
@@ -188,10 +189,10 @@ const char *printer_rx(void)
    }
    if (debug)
    {
-      fprintf(stderr, "Rx:");
+      fprintf(stderr, "Rx%d:",queue);
       int i = 0;
       for (i = 0; i < buflen && i < 200; i++)
-         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n    " : (i & 3) ? "" : " ", buf[i]);
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
       if (i < buflen)
          fprintf(stderr, "... (%d)", buflen);
       fprintf(stderr, "\n");
@@ -417,67 +418,69 @@ char *client_rx(j_t j)
             }
             for (l = 0; l < rows * cols && !data[p][l]; l++);
             if (l == rows * cols)
-            { // Blank
+            {                   // Blank
                free(data[p]);
                data[p] = NULL;
             } else
                found |= (1 << p);
          }
          if (found)
-	 {
-         if (side)
          {
-            status = "Second side";
-            client_tx(j_new());
-            printer_queue_cmd(printed ? 0x07021000 : 0x05021000);       // Retransfer and flip if printed, else just flip
-         } else
-         {
-            status = "First side";
-            client_tx(j_new());
-         }
-         printed = 0;
-         for (int p = 0; p < 8; p++)
-            if ((p < 3 && (found & 7)) || (found & (1 << p)))
-            {                   // Send panel
-               printer_start(0xF0000200, 0);
-               unsigned char temp[12] = { };
-               int len = rows * cols + 4;
-               temp[0] = (p == 4 ? 0x40 : (1 << p));
-               temp[4] = (len >> 24);
-               temp[5] = (len >> 16);
-               temp[6] = (len >> 8);
-               temp[7] = (len);
-               len -= 4;
-               temp[8] = (len >> 24);
-               temp[9] = (len >> 16);
-               temp[10] = (len >> 8);
-               temp[11] = (len);
-               printer_data(12, temp);
-               printer_data(rows * cols, data[p]);
-               printer_tx();
-               printed |= (p == 4 ? 0x40 : (1 << p));
+            if (side)
+            {
+               status = "Second side";
+               client_tx(j_new());
+               printer_queue_cmd(printed ? 0x07021000 : 0x05021000);    // Retransfer and flip if printed, else just flip
+            } else
+            {
+               status = "First side";
+               client_tx(j_new());
             }
-         if (printed)
-         {
-            if (j_test(panel, "uvsingle", 0))
-               printer_cmd(0x06020000 + printed);       // UV printed with rest, no special handling
-            else
-            {                   // UV printed separately
-               if (printed & 0x0F)
-                  printer_queue_cmd(0x06020000 + (printed & 0x0F));     // Non UV, if any
-               if (printed & 0x40)
-               {                // UV
-                  status = "UV";
-                  client_tx(j_new());
+            printed = 0;
+            for (int p = 0; p < 8; p++)
+               if ((p < 3 && (found & 7)) || (found & (1 << p)))
+               {                // Send panel
+                  printer_start(0xF0000200, 0);
+                  unsigned char temp[12] = { };
+                  int len = rows * cols + 4;
+                  temp[0] = (p == 4 ? 0x40 : (1 << p));
+                  temp[4] = (len >> 24);
+                  temp[5] = (len >> 16);
+                  temp[6] = (len >> 8);
+                  temp[7] = (len);
+                  len -= 4;
+                  temp[8] = (len >> 24);
+                  temp[9] = (len >> 16);
+                  temp[10] = (len >> 8);
+                  temp[11] = (len);
+                  printer_data(12, temp);
+                  printer_data(rows * cols, data[p]);
+                  printer_tx();
+                  printed |= (p == 4 ? 0x40 : (1 << p));
+               }
+            if (printed)
+            {
+               if (j_test(panel, "uvsingle", 0))
+                  printer_cmd(0x06020000 + printed);    // UV printed with rest, no special handling
+               else
+               {                // UV printed separately
                   if (printed & 0x0F)
-                     printer_queue_cmd(0x07020000);     // first transfer of non UV
-                  printer_queue_cmd(0x06020000 + (printed & 0x40));     // UV print
-                  printed &= 0x40;
+                     printer_queue_cmd(0x06020000 + (printed & 0x0F));  // Non UV, if any
+                  if (printed & 0x40)
+                  {             // UV
+                     status = "UV";
+                     client_tx(j_new());
+                     if (printed & 0x0F)
+                        printer_queue_cmd(0x07020000);  // first transfer of non UV
+                     printer_queue_cmd(0x06020000 + (printed & 0x40));  // UV print
+                     printed &= 0x40;
+                  }
                }
             }
          }
-	 }
-	 for(int i=0;i<8;i++)if(data[i])free(data[i]);
+         for (int i = 0; i < 8; i++)
+            if (data[i])
+               free(data[i]);
          side++;
          return error;
       }
@@ -492,19 +495,18 @@ char *client_rx(j_t j)
       {
          status = "Transfer";
          client_tx(j_new());
-         printer_cmd(0x07020000 + (posn=POS_EJECT));
+         printer_cmd(0x07020000 + (posn = POS_EJECT));
          status = "Printed";
       }
-      client_tx(j_new());
    } else if ((cmd = j_find(j, "reject")))
       moveto(POS_REJECT);
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
+   warnx("posn=%d error=%s",posn,error); // TODO
    check_position();
    if (error)
       return strdup(error);
-   warnx("posn=%d",posn); // TODO
-   if (posn <0)
+   if (posn < 0)
       return strdup("");        // Done
    return NULL;
 }
@@ -538,7 +540,8 @@ char *job(const char *from)
       j_store_int(j, "cols", cols);
       j_store_int(j, "dpi", dpi);
       client_tx(j);
-      // TODO would be nice if this included ribbon type
+      // TODO would be nice if this included ribbon type?
+      // TODO can we tell what devices connected?
    }
    // Send response
    if (!error)
@@ -591,7 +594,7 @@ int main(int argc, const char *argv[])
    const char *bindhost = NULL;
    const char *port = "7810";
    int background = 0;
-   int single=0;
+   int single = 0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -602,7 +605,7 @@ int main(int argc, const char *argv[])
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
-         { "single", 0, POPT_ARG_NONE|POPT_ARGFLAG_DOC_HIDDEN, &single, 0, "Single run (for memory debug)" },
+         { "single", 0, POPT_ARG_NONE | POPT_ARGFLAG_DOC_HIDDEN, &single, 0, "Single run (for memory debug)" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -745,7 +748,8 @@ int main(int argc, const char *argv[])
       SSL_free(ss);
       ss = NULL;
       close(s);
-      if(single)break; // debug one run
+      if (single)
+         break;                 // debug one run
    }
 
    return 0;
