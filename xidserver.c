@@ -478,7 +478,7 @@ char *client_rx(j_t j)
             unsigned char len = buf[p++];
             if ((tag & 0xF) == 6)
                for (int q = 0; q < len; q++)
-                  buf[p + q] = (buf[p + q] & 0x3F) ^ 0x20;
+                  buf[p + q] = (buf[p + q] & 0x3F) + 0x20;
             else
                for (int q = 0; q < len; q++)
                   buf[p + q] = (buf[p + q] & 0xF) + '0';
