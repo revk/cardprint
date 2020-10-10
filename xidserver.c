@@ -249,6 +249,8 @@ const char *printer_tx_check(void)
    if (!error && rxerr)
    {
       if (rxerr == 0x0002DB00)
+         error = "Initialising, not ready";
+      else if (rxerr == 0x0002DA00)
          error = "Warming up, not ready";
       else if (rxerr == 0x0002D100)
          error = "Door open";
@@ -258,6 +260,8 @@ const char *printer_tx_check(void)
          error = "Colour film missing";
       else if (rxerr == 0x0002D000)
          error = "No cards";
+      else if (rxerr == 0x00039000)
+         error = "Hopper jam";
       else
          error = "Printer returned error (see code)";
    }
@@ -504,7 +508,6 @@ char *client_rx(j_t j)
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
    check_position();
-   warnx("error=%s posn=%d", error, posn);
    if (error)
       return strdup(error);
    if (posn < 0)
