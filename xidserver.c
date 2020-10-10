@@ -417,14 +417,14 @@ char *client_rx(j_t j)
             }
             for (l = 0; l < rows * cols && !data[p][l]; l++);
             if (l == rows * cols)
-            {
+            { // Blank
                free(data[p]);
                data[p] = NULL;
             } else
                found |= (1 << p);
          }
-         if (!found)
-            return NULL;
+         if (found)
+	 {
          if (side)
          {
             status = "Second side";
@@ -476,8 +476,10 @@ char *client_rx(j_t j)
                }
             }
          }
+	 }
+	 for(int i=0;i<8;i++)if(data[i])free(data[i]);
          side++;
-         return NULL;
+         return error;
       }
       if (j_isobject(cmd))
          print_side(cmd);
@@ -501,6 +503,7 @@ char *client_rx(j_t j)
    check_position();
    if (error)
       return strdup(error);
+   warnx("posn=%d",posn); // TODO
    if (posn <0)
       return strdup("");        // Done
    return NULL;
