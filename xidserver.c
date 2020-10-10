@@ -289,6 +289,7 @@ const char *printer_tx_check(void)
 
 const char *printer_start_cmd(unsigned int cmd)
 {
+   // TODO work out move and flip logic?
    // First byte if command
    // Second is number of bytes after this byte
    // Commands
@@ -297,7 +298,7 @@ const char *printer_start_cmd(unsigned int cmd)
    // 4: Load Move (third byte 80 for load, forth is position)
    // 5: Move (forth is position)
    // 6: Transfer first
-   // 7: Transfer final?
+   // 7: Transfer and flip?
    // 8: Mag read
    // 9: Mag write
    // A: Contacts (0x40 disengage, 0x00 engage)
