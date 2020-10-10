@@ -6,10 +6,18 @@ clean:
 
 OPTS=-g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99 -Wall
 
-AXL/axl.o: AXL/axl.c
+AXL/axl.c:
+	git submodule init AXL
+	git submodule update --remote AXL
+
+AXL/axl.o: AXL/axl.c AXL
 	make -C AXL axl.o
 
-AJL/ajl.o: AJL/ajl.c
+AJL/ajl.c:
+	git submodule init AJL
+	git submodule update --remote AJL
+
+AJL/ajl.o: AJL/ajl.c AJL
 	make -C AJL ajl.o
 
 matica: matica.c AXL/axl.o

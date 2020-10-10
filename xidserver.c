@@ -130,7 +130,7 @@ const char *printer_tx(void)
       ssize_t l = write(psock, buf + n, buflen - n);
       if (l <= 0)
       {
-         warn("Tx %ld", l);
+         warn("Tx %d", l);
          return "Tx fail";
       }
       n += l;
@@ -156,7 +156,7 @@ const char *printer_rx(void)
          return "Printer disconnected link";
       if (l <= 0)
       {
-         warn("Rx %ld", l);
+         warn("Rx %d", l);
          return "Rx fail";
       }
       buflen += l;
