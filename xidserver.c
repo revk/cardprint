@@ -18,6 +18,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include <netdb.h>
 #include <err.h>
 #include <ajl.h>
@@ -138,7 +139,7 @@ const char *printer_tx(void)
    buf[7] = (n);
    if (debug)
    {
-      fprintf(stderr, "Tx%d:",queue);
+      fprintf(stderr, "Tx%d:", queue);
       int i = 0;
       for (i = 0; i < buflen && i < 200; i++)
          fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
@@ -189,7 +190,7 @@ const char *printer_rx(void)
    }
    if (debug)
    {
-      fprintf(stderr, "Rx%d:",queue);
+      fprintf(stderr, "Rx%d:", queue);
       int i = 0;
       for (i = 0; i < buflen && i < 200; i++)
          fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
@@ -590,6 +591,7 @@ char *job(const char *from)
 // Main server code
 int main(int argc, const char *argv[])
 {
+   signal(SIGPIPE, SIG_IGN);
    const char *bindhost = NULL;
    const char *port = "7810";
    int background = 0;

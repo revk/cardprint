@@ -468,7 +468,6 @@ int main(int argc, const char *argv[])
          return NULL;
       }
       char *er = j_stream_func(ss_read_func, ss, jin);
-      warnx("shutdown");
       SSL_shutdown(ss);
       SSL_free(ss);
       close(psock);
