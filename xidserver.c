@@ -289,12 +289,23 @@ const char *printer_tx_check(void)
 
 const char *printer_start_cmd(unsigned int cmd)
 {
+   // First byte if command
+   // Second is number of bytes after this byte
+   // Commands
+   // 1: Check status
+   // 2: Check position
+   // 4: Load Move (third byte 80 for load, forth is position)
+   // 5: Move (forth is position)
+   // 6: Transfer first
+   // 7: Transfer final?
+   // 8: Mag read
+   // 9: Mag write
+   // A: Contacts (0x40 disengage, 0x00 engage)
    if (error)
       return error;
    printer_start(0xF0000100, 0);
    unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
    printer_data(4, c);
-   // Not cmd is 8 bit command, 8 bit byte length of remaining data, then data, usually after 2 null bytes
    return NULL;
 }
 
