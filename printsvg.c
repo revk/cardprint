@@ -450,21 +450,25 @@ int main(int argc, const char *argv[])
          errx(1, "Cannot connect socket");
       if (SSL_connect(ss) != 1)
          errx(1, "Cannot connect to xid server");
-      char *jin(j_t j) {
+      char *jin(j_t i) {
          if (debug)
-            j_err(j_write_pretty(j, stderr));
+            j_err(j_write_pretty(i, stderr));
          const char *v;
-         if ((v = j_get(j, "dpi")) && atoi(v) != dpi)
+         if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
             return strdup("DPI mismatch");
-         if ((v = j_get(j, "rows")) && atoi(v) != rows)
+         if ((v = j_get(i, "rows")) && atoi(v) != rows)
             return strdup("Rows mismatch");
-         if ((v = j_get(j, "cols")) && atoi(v) != cols)
+         if ((v = j_get(i, "cols")) && atoi(v) != cols)
             return strdup("Cols mismatch");
-         if (j_find(j, "id"))
-            j_err(j_write_func(j, ss_write_func, ss));  // Send
+         if (j_find(i, "id")&&j)
+	 { // Send print
+            j_err(j_write_func(j, ss_write_func, ss)); 
+	    j_delete(&j);
+	 }
          return NULL;
       }
       char *er = j_stream_func(ss_read_func, ss, jin);
+      warnx("shutdown");
       SSL_shutdown(ss);
       SSL_free(ss);
       close(psock);
