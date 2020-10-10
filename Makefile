@@ -33,4 +33,4 @@ xid: xid.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o
 
 xidserver: xidserver.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o
+	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o  -pthread -lssl

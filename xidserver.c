@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <err.h>
@@ -26,10 +28,11 @@
 int debug = 0;                  // Top level debug
 const char *printhost = NULL;   // Printer host/IP
 const char *printport = "50730";        // Printer port (this is default for XID8600)
+const char *keyfile = NULL;     // SSL
+const char *certfile = NULL;
 
 // Current connectionns
-FILE *clientr = NULL;           // Connected client
-FILE *clientw = NULL;           // Connected client
+SSL *ss;                        // SSL client connection
 int psock = -1;                 // Connected printer (ethernet)
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
@@ -228,7 +231,20 @@ const char *printer_tx_check(void)
    while (queue)
       printer_rx();             // Catch up
    if (!error && rxerr)
-      error = "Printer returned error";
+   {
+      if (rxerr == 0x0002DB00)
+         error = "Warming up, not ready";
+      else if (rxerr == 0x0002D100)
+         error = "Door open";
+      else if (rxerr == 0x0003A100)
+         error = "Transfer film missing";
+      else if (rxerr == 0x0003B000)
+         error = "Colour film missing";
+      else if (rxerr == 0x0002D000)
+         error = "No cards";
+      else
+         error = "Printer returned error (see code)";
+   }
    return error;
 }
 
@@ -306,13 +322,23 @@ const char *moveto(int newposn)
    return error;
 }
 
+ssize_t ss_write_func(void *arg, void *buf, size_t len)
+{
+   return SSL_write(arg, buf, len);
+}
+
+ssize_t ss_read_func(void *arg, void *buf, size_t len)
+{
+   return SSL_read(arg, buf, len);
+}
+
 const char *client_tx(j_t j)
 {                               // Send data to client (deletes)
-   if (!clientw)
+   if (!ss)
       return "No client";
    if (debug)
       j_err(j_write_pretty(j, stderr));
-   j_err(j_write(j, clientw));  // flushes
+   j_err(j_write_func(j, ss_write_func, ss));   // flushes
    j_delete(&j);
    return NULL;
 }
@@ -508,7 +534,7 @@ char *job(const char *from)
    // Handle messages both ways
    char *ers = NULL;
    if (!error)
-      ers = j_stream(clientr, client_rx);
+      ers = j_stream_func(ss_read_func, ss, client_rx);
    if (error)
       moveto(4);
    printer_disconnect();
@@ -530,6 +556,8 @@ int main(int argc, const char *argv[])
          { "port", 'p', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &port, 0, "Port to bind", "port" },
          { "printer", 'H', POPT_ARG_STRING, &printhost, 0, "Printer", "Host/IP" },
          { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port", "port" },
+         { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
+         { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
@@ -542,7 +570,7 @@ int main(int argc, const char *argv[])
       if ((c = poptGetNextOpt(optCon)) < -1)
          errx(1, "%s: %s\n", poptBadOption(optCon, POPT_BADOPTION_NOALIAS), poptStrerror(c));
 
-      if (poptPeekArg(optCon) || !printhost)
+      if (poptPeekArg(optCon) || !printhost || !keyfile || !certfile)
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -600,6 +628,15 @@ int main(int argc, const char *argv[])
    if (err)
       errx(1, "Failed: %s", err);
 
+   SSL_library_init();
+   SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());  // Negotiates TLS
+   if (!ctx)
+      errx(1, "Cannot create SSL CTX");
+   if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+      errx(1, "Cannot load cert file");
+   if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
+      errx(1, "Cannot load key file");
+
    // Handle connections
    while (1)
    {
@@ -621,10 +658,30 @@ int main(int argc, const char *argv[])
       if (debug)
          warnx("Connect from %s", from);
       char *er = NULL;
-      clientr = fdopen(s, "r"); // Stream from client
-      clientw = fdopen(s, "w"); // Stream to client
-      if (!clientr || !clientw)
-         er = strdup("Open failed");
+      ss = SSL_new(ctx);
+      if (!ss)
+      {
+         warnx("Cannot create SSL server structure");
+         close(s);
+         continue;
+      }
+      if (!SSL_set_fd(ss, s))
+      {
+         close(s);
+         SSL_free(ss);
+         ss = NULL;
+         warnx("Could not set client SSL fd");
+         continue;
+      }
+      if (SSL_accept(ss) != 1)
+      {
+         close(s);
+         SSL_free(ss);
+         ss = NULL;
+         warnx("Could not establish SSL client connection");
+         continue;
+      }
+
       if (!er)
          er = job(from);
       if (debug)
@@ -640,8 +697,9 @@ int main(int argc, const char *argv[])
       }
       if (er)
          free(er);
-      fclose(clientr);
-      fclose(clientw);
+      SSL_shutdown(ss);
+      SSL_free(ss);
+      ss = NULL;
       close(s);
    }
 
