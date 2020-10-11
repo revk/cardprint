@@ -131,7 +131,7 @@ const char *error = NULL;       // Error happened (stops more processing)
 const char *status = NULL;      // Status
 int queue = 0;                  // Command queue
 int posn = 0;                   // Current card position
-int count=0;	// Print count
+int count = 0;                  // Print count
 int dpi = 0,
     rows = 0,
     cols = 0;                   // Size
@@ -155,7 +155,8 @@ j_t j_new(void)
       if (rxerr)
          j_store_stringf(e, "code", "%08X", rxerr);
    }
-   if(count)j_store_int(j,"count",count);
+   if (count)
+      j_store_int(j, "count", count);
    return j;
 }
 
@@ -297,12 +298,11 @@ const char *printer_rx_check(void)
    printer_rx();
    if (!error && (rxerr >> 16) == 2)
    {                            // Wait
-      warnx("Warning");         // TODO
       while (queue)
          printer_rx();
-      int t = 300;
+      time_t giveup = time(0) + 300;
       const char *last = NULL;
-      while (t-- && (rxerr >> 16) == 2 && !error)
+      while ((rxerr >> 16) == 2 && !error && time(0) < giveup)
       {
          const char *warn = msg(rxerr);
          rxerr = 0;
@@ -314,12 +314,13 @@ const char *printer_rx_check(void)
             j_store_boolean(j, "wait", 1);
             client_tx(j);
          }
-         sleep(1);
+         usleep(100000);
          printer_start_cmd(0x01020000);
          printer_tx();
          printer_rx();
       }
-      warnx("Warning clear");         // TODO
+      if (!rxerr)
+         client_tx(j_new());
    }
    if (!error && rxerr)
       error = msg(rxerr);
@@ -655,21 +656,20 @@ char *client_rx(j_t j)
                   png_set_gray_to_rgb(png_ptr); // RGB
                png_set_strip_alpha(png_ptr);
                png_set_interlace_handling(png_ptr);
-#if 0
                // Gamma adjust
-               double screen_gamma = 1.9;       // Seems a good default
                const char *v = j_get(panel, "@gamma");
                if (v)
-                  screen_gamma = strtod(v, NULL);
-               if (screen_gamma)
                {
-                  double gamma = 0;
-                  if (png_get_gAMA(png_ptr, info_ptr, &gamma))
-                     png_set_gamma(png_ptr, screen_gamma, gamma);
-                  else
-                     png_set_gamma(png_ptr, screen_gamma, 0.45455);
+                  double screen_gamma = strtod(v, NULL);
+                  if (screen_gamma)
+                  {
+                     double gamma = 0;
+                     if (png_get_gAMA(png_ptr, info_ptr, &gamma))
+                        png_set_gamma(png_ptr, screen_gamma, gamma);
+                     else
+                        png_set_gamma(png_ptr, screen_gamma, 1);
+                  }
                }
-#endif
                png_read_update_info(png_ptr, info_ptr);
                if (!layer)
                {                // CMY
@@ -683,7 +683,7 @@ char *client_rx(j_t j)
                   {
                      int y = r + dy;
                      png_read_row(png_ptr, image, NULL);
-                     //if(r<2||r>=height-2)warnx("Row %d y=%d Data %02X %02X ... %02X %02X",r,y,image[0],image[1],image[width-2],image[width-1]); // TODO
+                     //if (r < 2 || r >= height - 2) warnx("Row %d y=%d Data %02X %02X ... %02X %02X", r, y, image[0], image[1], image[width - 2], image[width - 1]);
                      if (y >= 0 && y < rows)
                         for (int c = 0; c < width; c++)
                         {
@@ -813,7 +813,7 @@ char *client_rx(j_t j)
                   }
                }
             }
-	    check_status();
+            check_status();
          }
          for (int i = 0; i < 8; i++)
             if (data[i])
@@ -836,7 +836,7 @@ char *client_rx(j_t j)
          client_tx(j_new());
          printer_cmd(0x07020000 + (posn = POS_EJECT));
          status = "Printed";
-	 count++;
+         count++;
       } else
       {
          moveto(POS_EJECT);     // Done anyway
@@ -859,7 +859,7 @@ char *client_rx(j_t j)
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
    // Connect to printer, get answer back, report to client
-   count=0;
+   count = 0;
    printer_connect();
    printer_rx_check();
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
