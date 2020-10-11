@@ -419,13 +419,10 @@ char *client_rx(j_t j)
       int p = 0;
       int c = 0;
       void encode(unsigned char tag, j_t j) {
-         const char *v = "";
-         int len = 1;
-         if (j_isstring(j))
-         {
-            v = j_val(j);
-            len = j_len(j);
-         }
+         if (!j_isstring(j))
+            return;
+         const char *v = j_val(j);
+         int len = j_len(j);
          if (len > 64)
             error = "Mag track too long";
          else
@@ -442,11 +439,8 @@ char *client_rx(j_t j)
          }
       }
       if (j_isstring(cmd))
-      {
-         encode(0x16, NULL);
          encode(0x24, cmd);
-         encode(0x34, NULL);
-      } else if (j_isarray(cmd))
+      else if (j_isarray(cmd))
       {
          encode(0x16, j_index(cmd, 0));
          encode(0x24, j_index(cmd, 1));
@@ -573,6 +567,8 @@ char *client_rx(j_t j)
                   printer_tx();
                   printed |= (p == 4 ? 0x40 : (1 << p));
                }
+            while (queue)
+               printer_rx_check();
             if (printed)
             {
                if (j_test(panel, "uvsingle", 0))
@@ -606,6 +602,8 @@ char *client_rx(j_t j)
          print_side(j_index(cmd, 0));
          print_side(j_index(cmd, 1));
       }
+      while (queue)
+         printer_rx_check();
       if (printed)
       {
          status = "Transfer";
