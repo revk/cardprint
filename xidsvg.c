@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdlib.h>
@@ -25,7 +26,6 @@
 #include <err.h>
 #include <signal.h>
 #include <execinfo.h>
-#include <png.h>
 #include <axl.h>
 #include <ajl.h>
 
@@ -146,16 +146,6 @@ int main(int argc, const char *argv[])
    if (debug)
       fprintf(stderr, "%d side%s, %d layer%s\n", sides, sides == 1 ? "" : "s", layers, layers == 1 ? "" : "s");
 
-   // Convert each layer to png then rgb
-   char *tmprgb = strdup("/tmp/cardXXXXXX.rgb");
-   FILE *rgbfile = NULL;
-   {
-      int f = mkstemps(tmprgb, 4);
-      if (f < 0)
-         errx(1, "Cannot make temp %s", tmprgb);
-      if ((rgbfile = fdopen(f, "w")) < 0)
-         err(1, "Cannot open %s", tmprgb);
-   }
    char *tmpsvg = strdup("/tmp/cardXXXXXX.svg");
    {
       int f = mkstemps(tmpsvg, 4);
@@ -169,9 +159,7 @@ int main(int argc, const char *argv[])
    char *tmp[2][3] = { };
    pid_t pid[2][3] = { };
    for (int side = 0; side < sides; side++)
-   {
-      int layer;
-      for (layer = 0; layer < layers; layer++)
+      for (int layer = 0; layer < layers; layer++)
       {
          tmp[side][layer] = strdup("/tmp/cardXX-XXXXXX.png");
          tmp[side][layer][9] = layertag[layer];
@@ -209,15 +197,6 @@ int main(int argc, const char *argv[])
             return 1;
          }
       }
-      for (; layer < 3; layer++)
-      {                         // Blank layers
-         int x,
-          y;
-         for (y = 0; y < rows; y++)
-            for (x = 0; x < cols; x++)
-               fputc(0, rgbfile);
-      }
-   }
    for (int side = 0; side < sides; side++)
       for (int layer = 0; layer < layers; layer++)
       {
@@ -226,7 +205,6 @@ int main(int argc, const char *argv[])
          if (!WIFEXITED(status) || WEXITSTATUS(status))
             errx(1, "inkscape failed");
       }
-   fclose(rgbfile);
 
    if (png)
    {                            // Make png montage
@@ -286,7 +264,6 @@ int main(int argc, const char *argv[])
    if (xidserver)
    {                            // Send to xidserver
       // Make JSON
-      FILE *f = fopen(tmprgb, "r");
       j_t j = j_create();
       if (mag1 || mag2 || mag3)
       {
@@ -297,25 +274,29 @@ int main(int argc, const char *argv[])
       }
       j_t p = j_store_array(j, "print");
       unsigned char *panel = malloc(cols * rows);
-      char *b64 = malloc((cols * rows * 8 + 5) / 6 + 3);        // Allow ==[null]
       for (int side = 0; side < sides; side++)
       {
          j_t s = j_append_object(p);
-         for (int layer = 0; layer < 5; layer++)
-         {
-            if (fread(panel, cols * rows, 1, f) == 1)
-            {
-               static char *name[] = { "Y", "M", "C", "K", "U" };
-               if (!j_baseN(cols * rows, panel, (cols * rows * 8 + 5) / 6 + 3, b64, JBASE64, 6))
-                  errx(1, "base64 fail %p", panel);
-               j_store_string(s, name[layer], b64);
-            }
+         void add(int layer) {  // base64 uses alloca so make a function, why not
+            int f = open(tmp[side][layer], O_RDONLY);
+            if (f < 0)
+               err(1, "Cannot open %s", tmp[side][layer]);
+            struct stat st;
+            if (fstat(f, &st) < 0)
+               err(1, "Cannot stat file %s", tmp[side][layer]);
+            size_t length = st.st_size;
+            void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
+            if (addr == MAP_FAILED)
+               err(1, "Cannot map file %s", tmp[side][layer]);
+            const char *tag[] = { "C", "K", "U" };
+            j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
+            munmap(addr, length);
+            close(f);
          }
+         for (int layer = 0; layer < layers; layer++)
+            add(layer);
       }
-      free(b64);
       free(panel);
-      fclose(f);
-      // TODO mag encoding
       // Send
       int psock = -1;
       struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
@@ -389,9 +370,6 @@ int main(int argc, const char *argv[])
    if (!debug)
       unlink(tmpsvg);
    free(tmpsvg);
-   if (!debug)
-      unlink(tmprgb);
-   free(tmprgb);
    for (int side = 0; side < sides; side++)
       for (int layer = 0; layer < layers; layer++)
       {
