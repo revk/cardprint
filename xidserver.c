@@ -458,38 +458,48 @@ char *client_rx(j_t j)
          status = "Encoded";
          client_tx(j_new());
       }
-      // Read
-      status = "Reading";
-      client_tx(j_new());
-      moveto(POS_MAG);
-      check_position();
-      status = "Read done";
-      {
-         unsigned char temp[4] = { 0x24, 0x34 };
-         printer_start_cmd(0x08060016);
-         printer_data(4, temp);
-      }
-      printer_tx();
-      printer_rx();
-      if (!rxerr)
-      {
+      if (j_isnull(cmd) || j_istrue(cmd))
+      {                         // Read
+         status = "Reading";
+         client_tx(j_new());
+         moveto(POS_MAG);
+         check_position();
+         // Load tacks separately as loading all at once causes error if any do not read
+         void mread(j_t j, unsigned char tag) {
+            char t = (tag >> 4) - 1;
+            unsigned char temp[4] = { };
+            if (t)
+               temp[t - 1] = tag;
+            printer_start_cmd(0x08060000 + (t ? 0 : 0x16));
+            printer_data(4, temp);
+            printer_tx();
+            printer_rx();
+            if (rxerr)
+               j_append_literal(j,"null");
+            else
+            {
+               int p = 20;
+               int c = buf[p++];
+               while (c--)
+               {
+                  unsigned char tag = buf[p++];
+                  unsigned char len = buf[p++];
+                  if ((tag & 0xF) == 6)
+                     for (int q = 0; q < len; q++)
+                        buf[p + q] = (buf[p + q] & 0x3F) + 0x20;
+                  else
+                     for (int q = 0; q < len; q++)
+                        buf[p + q] = (buf[p + q] & 0xF) + '0';
+                  j_append_stringn(j, (char *) buf + p, len);
+                  p += len;
+               }
+            }
+         }
          j_t j = j_new();
          j_t m = j_store_array(j, "mag");
-         int p = 20;
-         int c = buf[p++];
-         while (c--)
-         {
-            unsigned char tag = buf[p++];
-            unsigned char len = buf[p++];
-            if ((tag & 0xF) == 6)
-               for (int q = 0; q < len; q++)
-                  buf[p + q] = (buf[p + q] & 0x3F) + 0x20;
-            else
-               for (int q = 0; q < len; q++)
-                  buf[p + q] = (buf[p + q] & 0xF) + '0';
-            j_append_stringn(m, (char *) buf + p, len);
-            p += len;
-         }
+         mread(m, 0x16);
+         mread(m, 0x24);
+         mread(m, 0x34);
          client_tx(j);
       }
    }
