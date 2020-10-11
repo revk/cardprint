@@ -25,6 +25,7 @@
 #include <err.h>
 #include <signal.h>
 #include <execinfo.h>
+#include <png.h>
 #include <axl.h>
 #include <ajl.h>
 
@@ -166,8 +167,8 @@ int main(int argc, const char *argv[])
    }
    const char layertag[] = "CKU";
    char *tmp[2][3] = { };
-   int side;
-   for (side = 0; side < sides; side++)
+   pid_t pid[2][3] = { };
+   for (int side = 0; side < sides; side++)
    {
       int layer;
       for (layer = 0; layer < layers; layer++)
@@ -180,11 +181,7 @@ int main(int argc, const char *argv[])
             errx(1, "Cannot make temp %s", tmp[side][layer]);
          close(f);
          char id[3] = { layertag[layer], '1' + side };
-         int status = 0;
-         pid_t child = fork();
-         if (child)
-            waitpid(child, &status, 0);
-         else
+         if (!(pid[side][layer] = fork()))
          {
             char *args[100];
             int a = 0,
@@ -211,91 +208,6 @@ int main(int argc, const char *argv[])
             execv("/usr/bin/inkscape", (char *const *) args);
             return 1;
          }
-         if (!WIFEXITED(status) || WEXITSTATUS(status))
-            errx(1, "inkscape failed");
-         if (!png)
-         {
-            // Convert to RGB/Grey
-            char *tmpraw = strdup("/tmp/cardXXXXXX.rgb");
-            {
-               int f = mkstemps(tmpraw, 4);
-               if (f < 0)
-                  errx(1, "Cannot make temp %s", tmpraw);
-               close(f);
-            }
-            pid_t child = fork();
-            if (child)
-               waitpid(child, &status, 0);
-            else
-            {
-               char *args[100];
-               int a = 0,
-                   i;
-               args[a++] = "gm";
-               args[a++] = "convert";
-               args[a++] = "-gravity";
-               args[a++] = "center";
-               args[a++] = "-extent";
-               if (asprintf(&args[a++], "%dx%d", cols, rows) < 0)
-                  errx(1, "malloc");
-               args[a++] = "-crop";
-               if (asprintf(&args[a++], "%dx%d", cols, rows) < 0)
-                  errx(1, "malloc");
-               args[a++] = tmp[side][layer];
-               args[a++] = tmpraw;
-               args[a++] = NULL;
-               if (debug)
-                  for (i = 0; i < a; i++)
-                     fprintf(stderr, "%s%s", i ? " " : "", args[i] ? : "\n");
-               int n = open("/dev/null", 0);
-               dup2(n, 1);
-               dup2(n, 2);
-               close(n);
-               execv("/usr/bin/gm", (char *const *) args);
-               return 1;
-            }
-            if (!WIFEXITED(status) || WEXITSTATUS(status))
-               errx(1, "gm failed");
-            int f = open(tmpraw, O_RDONLY);
-            if (f < 0)
-               err(1, "Could not open %s", tmpraw);
-            size_t size = cols * rows * 3;
-            unsigned char buf[size];
-            if (read(f, buf, size) != size)
-               errx(1, "Did not read all of %s", tmpraw);
-            close(f);
-            if (!layer)
-            {                   // Colour
-               int c,
-                x,
-                y;
-               for (c = 2; c >= 0; c--)
-                  for (y = 0; y < rows; y++)
-                     for (x = 0; x < cols; x++)
-                        fputc(buf[c + 3 * (y * cols + x)] ^ 0xFF, rgbfile);
-            }
-#if 1                           // Yes, seems any non 0 causes black to print, so we need to use cut off for black else stuff gets thick (text, etc)
-            else if (layer == 1)
-            {                   // Black
-               int x,
-                y;
-               for (y = 0; y < rows; y++)
-                  for (x = 0; x < cols; x++)
-                     fputc(((buf[3 * (y * cols + x) + 0] + buf[3 * (y * cols + x) + 1] + buf[3 * (y * cols + x) + 2]) / 3) >= 128 ? 0 : 0xFF, rgbfile);
-            }
-#endif
-            else
-            {                   // Grey
-               int x,
-                y;
-               for (y = 0; y < rows; y++)
-                  for (x = 0; x < cols; x++)
-                     fputc(((buf[3 * (y * cols + x) + 0] + buf[3 * (y * cols + x) + 1] + buf[3 * (y * cols + x) + 2]) / 3) ^ 0xFF, rgbfile);
-            }
-            if (!debug)
-               unlink(tmpraw);
-            free(tmpraw);
-         }
       }
       for (; layer < 3; layer++)
       {                         // Blank layers
@@ -306,6 +218,14 @@ int main(int argc, const char *argv[])
                fputc(0, rgbfile);
       }
    }
+   for (int side = 0; side < sides; side++)
+      for (int layer = 0; layer < layers; layer++)
+      {
+         int status = 0;
+         waitpid(pid[side][layer], &status, 0);
+         if (!WIFEXITED(status) || WEXITSTATUS(status))
+            errx(1, "inkscape failed");
+      }
    fclose(rgbfile);
 
    if (png)
@@ -336,9 +256,8 @@ int main(int argc, const char *argv[])
          args[a++] = "-tile";
          if (asprintf(&args[a++], "%dx%d", sides, layers) < 0)
             errx(1, "malloc");
-         int layer;
-         for (layer = 0; layer < layers; layer++)
-            for (side = 0; side < sides; side++)
+         for (int layer = 0; layer < layers; layer++)
+            for (int side = 0; side < sides; side++)
                args[a++] = tmp[side][layer];
          args[a++] = tmppng;
          args[a++] = NULL;
@@ -466,7 +385,6 @@ int main(int argc, const char *argv[])
       if (er && *er)
          errx(1, "Failed %s", er);
    }
-
    // Cleanup
    if (!debug)
       unlink(tmpsvg);
@@ -474,16 +392,13 @@ int main(int argc, const char *argv[])
    if (!debug)
       unlink(tmprgb);
    free(tmprgb);
-   for (side = 0; side < sides; side++)
-   {
-      int layer;
-      for (layer = 0; layer < layers; layer++)
+   for (int side = 0; side < sides; side++)
+      for (int layer = 0; layer < layers; layer++)
       {
          if (!debug)
             unlink(tmp[side][layer]);
          free(tmp[side][layer]);
       }
-   }
    xml_tree_delete(svg);
 
    return 0;
