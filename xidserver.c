@@ -221,7 +221,7 @@ const char *printer_rx_check(void)
    if (!error && rxerr)
    {
       const char *decode(void) {
-         if (rxerr == 0x0003440)
+         if (rxerr == 0x00034400)
             return "Hardware";
          if (rxerr == 0x00039000)
             return "Jam(Hopper)";
@@ -257,6 +257,8 @@ const char *printer_rx_check(void)
             return "Power Intrpt";
          if (rxerr == 0x0002D100)
             return "Door open";
+         if (rxerr == 0x0002D300)
+            return "Print error";
          if (rxerr == 0x0002D800)
             return "Hardware";
          if (rxerr == 0x0002F000)
@@ -347,8 +349,8 @@ const char *printer_start_cmd(unsigned int cmd)
    // 2: Check position
    // 4: Load Move (third byte 80 for load, 10 for flip, forth is position)
    // 5: Move (forth is position)
-   // 6: Transfer final?
-   // 7: Transfer first?
+   // 6: Print to transfer film (forth byte is layers to transfer)
+   // 7: Transfer to card (third/forth same as move card, done after transfer)
    // 8: Mag read
    // 9: Mag write
    // A: Contacts (0x40 disengage, 0x00 engage)
@@ -623,8 +625,9 @@ char *client_rx(j_t j)
                   png_set_gray_to_rgb(png_ptr); // RGB
                png_set_strip_alpha(png_ptr);
                png_set_interlace_handling(png_ptr);
+#if 0
                // Gamma adjust
-               double screen_gamma = 1.75;      // Seems a good default
+               double screen_gamma = 1.9;      // Seems a good default
                const char *v = j_get(panel, "@gamma");
                if (v)
                   screen_gamma = strtod(v, NULL);
@@ -636,6 +639,7 @@ char *client_rx(j_t j)
                   else
                      png_set_gamma(png_ptr, screen_gamma, 0.45455);
                }
+#endif
                png_read_update_info(png_ptr, info_ptr);
                if (!layer)
                {                // CMY
@@ -737,7 +741,7 @@ char *client_rx(j_t j)
                   printer_start(0xF0000200, 0);
                   unsigned char temp[12] = { };
                   int len = rows * cols + 4;
-                  temp[0] = (p == 4 ? 0x40 : (1 << p));
+                  temp[0] = (1 << p);
                   temp[4] = (len >> 24);
                   temp[5] = (len >> 16);
                   temp[6] = (len >> 8);
@@ -750,7 +754,7 @@ char *client_rx(j_t j)
                   printer_data(12, temp);
                   printer_data(rows * cols, data[p]);
                   printer_tx();
-                  printed |= (p == 4 ? 0x40 : (1 << p));
+                  printed |= (1 << p);
                   while (queue > 3)
                      printer_rx_check();
                }
@@ -771,7 +775,6 @@ char *client_rx(j_t j)
                      if (printed & 0x0F)
                         printer_queue_cmd(0x07020000);  // first transfer of non UV
                      printer_queue_cmd(0x06020000 + (printed & 0x40));  // UV print
-                     printed &= 0x40;
                   }
                }
             }
