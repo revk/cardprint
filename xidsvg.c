@@ -75,12 +75,16 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
 
 int main(int argc, const char *argv[])
 {
+   const char *certfile = NULL;
+   const char *keyfile = NULL;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
 #ifndef	XIDSERVER
          { "xidserver", 'S', POPT_ARG_STRING, &xidserver, 0, "Send to xidserver", "hostname" },
 #endif
+         { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL client key file", "filename" },
+         { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL client cert file", "filename" },
          { "loaded", 'L', POPT_ARG_NONE, &loaded, 0, "Expect card to be loaded" },
          { "retain", 'K', POPT_ARG_NONE, &retain, 0, "Retain card" },
          { "uv-single", 0, POPT_ARG_NONE, &uvsingle, 0, "UV on same retransfer" },
@@ -325,6 +329,10 @@ int main(int argc, const char *argv[])
       SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());       // Negotiates TLS
       if (!ctx)
          errx(1, "Cannot make ctx");
+      if (certfile && SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+         errx(1, "Cannot load cert file");
+      if (keyfile && SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
+         errx(1, "Cannot load key file");
       SSL *ss = SSL_new(ctx);
       if (!ss)
          errx(1, "Cannot make TLS");
