@@ -75,6 +75,7 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
 
 int main(int argc, const char *argv[])
 {
+   int debugimg = 0;
    const char *certfile = NULL;
    const char *keyfile = NULL;
    {                            // POPT
@@ -102,6 +103,7 @@ int main(int argc, const char *argv[])
 #endif
          { "input", 'i', POPT_ARG_STRING, &input, 0, "Input file (else stdin)", "filename" },
          { "output", 'o', POPT_ARG_STRING, &output, 0, "Output file (else stdout)", "filename" },
+         { "debug-img", 0, POPT_ARG_NONE, &debugimg, 0, "Debug img" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -296,6 +298,8 @@ int main(int argc, const char *argv[])
             j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
             munmap(addr, length);
             close(f);
+            if (debugimg)
+               printf("<img src='%s'>\n", j_get(s, tag[layer]));
          }
          for (int layer = 0; layer < layers; layer++)
             add(layer);

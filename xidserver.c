@@ -627,7 +627,7 @@ char *client_rx(j_t j)
                png_set_interlace_handling(png_ptr);
 #if 0
                // Gamma adjust
-               double screen_gamma = 1.9;      // Seems a good default
+               double screen_gamma = 1.9;       // Seems a good default
                const char *v = j_get(panel, "@gamma");
                if (v)
                   screen_gamma = strtod(v, NULL);
