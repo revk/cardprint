@@ -33,4 +33,4 @@ cardart: cardart.c
 	cc -O -o $@ $< ${OPTS} -lpopt
 
 xidserver: xidserver.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o -pthread -lssl
+	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o -pthread -lssl -lpng -lm

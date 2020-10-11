@@ -22,6 +22,7 @@
 #include <netdb.h>
 #include <err.h>
 #include <ajl.h>
+#include <png.h>
 
 // As this is single threader operation, on job at a time, we are using globals :-)
 
@@ -234,7 +235,7 @@ const char *printer_rx_check(void)
       else if (rxerr == 0x00039000)
          error = "Hopper jam";
       else if (rxerr == 0x00052600)
-         error = "Mag read fail";
+         error = "Failed";
       else if (rxerr == 0x0003AD00)
          error = "Mag write fail";
       else
@@ -475,7 +476,7 @@ char *client_rx(j_t j)
             printer_tx();
             printer_rx();
             if (rxerr)
-               j_append_literal(j,"null");
+               j_append_literal(j, "null");
             else
             {
                int p = 20;
@@ -515,36 +516,144 @@ char *client_rx(j_t j)
    {
       unsigned char printed = 0;
       unsigned char side = 0;
-      moveto(POS_PRINT);        // ready to print
       const char *print_side(j_t panel) {
          if (error)
             return error;
          if (!panel)
             return NULL;
-         static const char *panelname[8] = { "Y", "M", "C", "K", "P", "Q", "U", "Z" };  // No idea what the extra panels are, but why not have them...
          unsigned char found = 0;
          unsigned char *data[8] = { };
-         for (int p = 0; p < 8; p++)
-         {                      // Load panel data
-            const char *d = j_get(panel, panelname[p]);
+         const char *add(const char *tag, int layer) {
+            if (error)
+               return error;
+            const char *d = j_get(panel, tag);
             if (!d)
-               continue;
-            int l = j_base64d(d, &data[p]);
-            if (l != rows * cols)
-            {
-               error = "Wrong print data size";
-               break;
+               return NULL;
+            if (strncasecmp(d, "data:image/png;base64,", 22))
+               return error = "Image data must be png base64";
+            unsigned char *png = NULL;
+            int l = j_base64d(d + 22, &png);
+            FILE *f = fmemopen(png, l, "rb");
+            const char *process(void) {
+               if (png_sig_cmp(png, 0, l))
+                  return error = "Not PNG";
+               png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+               if (!png_ptr)
+                  return error = "Bad PNG init";
+               png_infop info_ptr = png_create_info_struct(png_ptr);
+               png_infop end_info = png_create_info_struct(png_ptr);
+               if (!info_ptr || !end_info)
+               {
+                  png_destroy_read_struct(&png_ptr, NULL, NULL);
+                  return error = "Bad PNG init";
+               }
+               png_init_io(png_ptr, f);
+               png_read_info(png_ptr, info_ptr);
+               unsigned int width,
+                height;
+               int bit_depth,
+                color_type,
+                interlace_type,
+                compression_type,
+                filter_type;
+               png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, &interlace_type, &compression_type, &filter_type);
+               int dx = (cols - (int) width) / 2,
+                   dy = (rows - (int) height) / 2;
+               if (debug)
+                  warnx("PNG %s%d:%ux%u (%d/%d)", tag, side, width, height, dx, dy);
+               png_set_expand(png_ptr); // Expand palette, etc
+               png_set_strip_16(png_ptr);       // Reduce to 8 bit
+               png_set_packing(png_ptr);        // Unpack
+               if (layer)
+                  png_set_rgb_to_gray(png_ptr, 1, 54.0 / 256, 183.0 / 256);
+               else
+                  png_set_gray_to_rgb(png_ptr); // RGB
+               png_set_strip_alpha(png_ptr);
+               png_set_interlace_handling(png_ptr);
+               png_read_update_info(png_ptr, info_ptr);
+               if (!layer)
+               {                // CMY
+                  png_bytep image = malloc(3 * width);
+                  for (int layer = 0; layer < 3; layer++)
+                  {
+                     data[layer] = malloc(rows * cols);
+                     memset(data[layer], 0, rows * cols);
+                  }
+                  for (int r = 0; r < height; r++)
+                  {
+                     png_read_row(png_ptr, image, NULL);
+                     for (int c = 0; c < width; c++)
+                     {
+                        int x = c + dx,
+                            y = r + dy;
+                        if (x >= 0 && x < cols && y >= 0 && y <= rows)
+                        {
+                           int o = y * cols + x;
+                           png_bytep p = image + 3 * c;
+                           data[2][o] = *p++ ^ 0xFF;
+                           data[1][o] = *p++ ^ 0xFF;
+                           data[0][o] = *p++ ^ 0xFF;
+                        }
+                     }
+                  }
+                  for (int layer = 0; layer < 3; layer++)
+                  {
+                     int z;
+                     for (z = 0; z < rows * cols && !data[layer][z]; z++);
+                     if (z == rows * cols)
+                     {          // Blank
+                        free(data[layer]);
+                        data[layer] = NULL;
+                     } else
+                        found |= (1 << layer);
+                  }
+                  free(image);
+               } else
+               {                // K or U
+                  png_bytep image = malloc(width);
+                  data[layer] = malloc(rows * cols);
+                  memset(data[layer], 0, rows * cols);
+                  for (int r = 0; r < height; r++)
+                  {
+                     png_read_row(png_ptr, image, NULL);
+                     for (int c = 0; c < width; c++)
+                     {
+                        int x = c + dx,
+                            y = r + dy;
+                        if (x >= 0 && x < cols && y >= 0 && y <= rows)
+                        {
+                           int o = y * cols + x;
+                           if (layer == 3)
+                              data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);  // Black
+                           else
+                              data[layer][o] = image[c] ^ 0xFF;
+                        }
+                     }
+                  }
+                  int z;
+                  for (z = 0; z < rows * cols && !data[layer][z]; z++);
+                  if (z == rows * cols)
+                  {             // Blank
+                     free(data[layer]);
+                     data[layer] = NULL;
+                  } else
+                     found |= (1 << layer);
+                  free(image);
+               }
+               png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+               return NULL;
             }
-            for (l = 0; l < rows * cols && !data[p][l]; l++);
-            if (l == rows * cols)
-            {                   // Blank
-               free(data[p]);
-               data[p] = NULL;
-            } else
-               found |= (1 << p);
+            process();
+            fclose(f);
+            free(png);
+            return NULL;
          }
+         add("C", 0);
+         add("K", 3);
+         add("U", 6);
          if (found)
          {
+            moveto(POS_PRINT);  // ready to print
             if (side)
             {
                status = "Second side";
@@ -625,7 +734,9 @@ char *client_rx(j_t j)
          moveto(POS_EJECT);     // Done anyway
          status = "Unprinted";
       }
-   } else if ((cmd = j_find(j, "reject")))
+   }
+
+   else if ((cmd = j_find(j, "reject")))
       moveto(POS_REJECT);
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
