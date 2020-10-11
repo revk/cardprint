@@ -738,6 +738,8 @@ char *client_rx(j_t j)
                   printer_data(rows * cols, data[p]);
                   printer_tx();
                   printed |= (p == 4 ? 0x40 : (1 << p));
+                  while (queue > 2)
+                     printer_rx_check();
                }
             while (queue)
                printer_rx_check();
