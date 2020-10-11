@@ -324,7 +324,12 @@ int main(int argc, const char *argv[])
       }
       freeaddrinfo(res);
       if (psock < 0)
+      {
+         if (jsstatus)
+            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Not connected");
+         fflush(stdout);
          errx(1, "Not connected to xidserver");
+      }
       SSL_library_init();
       SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());       // Negotiates TLS
       if (!ctx)
@@ -345,12 +350,18 @@ int main(int argc, const char *argv[])
             j_err(j_write_pretty(i, stderr));
          const char *v;
          if (jsstatus && (v = j_get(i, "status")))
+         {
             printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+            fflush(stdout);
+         }
          if (j_find(i, "error"))
          {
             v = strdup(j_get(i, "error.description"));
             if (jsstatus)
+            {
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+               fflush(stdout);
+            }
             return (char *) v;
          }
          if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
