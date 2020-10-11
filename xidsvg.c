@@ -76,6 +76,7 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
 int main(int argc, const char *argv[])
 {
    int debugimg = 0;
+   int count=0;
    const char *certfile = NULL;
    const char *keyfile = NULL;
    {                            // POPT
@@ -354,6 +355,7 @@ int main(int argc, const char *argv[])
             if (debug)
                j_err(j_write_pretty(i, stderr));
             const char *v;
+	    if((v=j_get(i,"count")))count=atoi(v);
             if (jsstatus && (v = j_get(i, "status")))
             {
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
@@ -403,6 +405,5 @@ int main(int argc, const char *argv[])
          free(tmp[side][layer]);
       }
    xml_tree_delete(svg);
-
-   return 0;
+   return count?0:1;
 }
