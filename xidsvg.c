@@ -1,7 +1,4 @@
 // Card handling - convert SVG to matica for printing
-//
-//	DEPRECATED	Replaced by xidsvg
-//
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
 // Expects print layers (id) C1, K1, U1, C2, K2, U2, and @layers and @sides defined, etc
 // Expects to be convertible at 300dpi to an image covering card (ideally at least 1024x648 to 1036x664), but centres if smaller/larger
@@ -16,6 +13,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdlib.h>
@@ -31,6 +30,12 @@
 
 #define xquoted(x)      #x
 #define quoted(x)       xquoted(x)
+const char xidport[] = "7810";
+#ifdef	XIDSERVER
+char *xidserver = quoted(XIDSERVER);
+#else
+char *xidserver = NULL;
+#endif
 #ifdef	PRINTER
 char *printer = quoted(PRINTER);
 #else
@@ -68,6 +73,16 @@ const char *input = NULL;
 const char *output = NULL;
 char *jsstatus = NULL;
 
+ssize_t ss_write_func(void *arg, void *buf, size_t len)
+{
+   return SSL_write(arg, buf, len);
+}
+
+ssize_t ss_read_func(void *arg, void *buf, size_t len)
+{
+   return SSL_read(arg, buf, len);
+}
+
 int main(int argc, const char *argv[])
 {
    {                            // POPT
@@ -75,6 +90,9 @@ int main(int argc, const char *argv[])
       const struct poptOption optionsTable[] = {
 #ifndef	PRINTER
          { "printer", 'P', POPT_ARG_STRING | (printer ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &printer, 0, "Printer", "IP/hostname" },
+#endif
+#ifndef	XIDSERVER
+         { "xidserver", 'S', POPT_ARG_STRING, &xidserver, 0, "Send to xidserver", "hostname" },
 #endif
          { "port", 0, POPT_ARG_STRING | (portname ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &portname, 0, "Port", "number/name" },
          { "loaded", 'L', POPT_ARG_NONE, &loaded, 0, "Expect card to be loaded" },
@@ -110,7 +128,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (rgb && png) || (!rgb && !png && !printer))
+      if (poptPeekArg(optCon) || (rgb && png) || (!xidserver && !rgb && !png && !printer) || (xidserver && printer))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -371,7 +389,103 @@ int main(int argc, const char *argv[])
       fclose(f);
    }
 
-   if (!rgb && !png )
+   if (xidserver)
+   {                            // Send to xidserver
+      // Make JSON
+      FILE *f = fopen(tmprgb, "r");
+      j_t j = j_create();
+      j_t p = j_store_array(j, "print");
+      unsigned char *panel = malloc(cols * rows);
+      char *b64 = malloc((cols * rows * 8 + 5) / 6 + 3);        // Allow ==[null]
+      for (int side = 0; side < sides; side++)
+      {
+         j_t s = j_append_object(p);
+         for (int layer = 0; layer < 5; layer++)
+         {
+            if (fread(panel, cols * rows, 1, f) == 1)
+            {
+               static char *name[] = { "Y", "M", "C", "K", "U" };
+               if (!j_baseN(cols * rows, panel, (cols * rows * 8 + 5) / 6 + 3, b64, JBASE64, 6))
+                  errx(1, "base64 fail %p", panel);
+               j_store_string(s, name[layer], b64);
+            }
+         }
+      }
+      free(b64);
+      free(panel);
+      fclose(f);
+      // TODO mag encoding
+      // Send
+      int psock = -1;
+      struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
+      struct addrinfo *res = NULL,
+          *a;
+      int r = getaddrinfo(xidserver, xidport, &base, &res);
+      if (r)
+         errx(1, "Cannot get addr info %s", xidserver);
+      for (a = res; a; a = a->ai_next)
+      {
+         int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+         if (s >= 0)
+         {
+            if (!connect(s, a->ai_addr, a->ai_addrlen))
+            {
+               psock = s;
+               break;
+            }
+            close(s);
+         }
+      }
+      freeaddrinfo(res);
+      if (psock < 0)
+         errx(1, "Not connected to xidserver");
+      SSL_library_init();
+      SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());       // Negotiates TLS
+      if (!ctx)
+         errx(1, "Cannot make ctx");
+      SSL *ss = SSL_new(ctx);
+      if (!ss)
+         errx(1, "Cannot make TLS");
+      if (!SSL_set_fd(ss, psock))
+         errx(1, "Cannot connect socket");
+      if (SSL_connect(ss) != 1)
+         errx(1, "Cannot connect to xid server");
+      char *jin(j_t i) {
+         if (debug)
+            j_err(j_write_pretty(i, stderr));
+         const char *v;
+         if (jsstatus && (v = j_get(i, "status")))
+            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+         if (j_find(i, "error"))
+         {
+            v = strdup(j_get(i, "error.description"));
+            if (jsstatus)
+               printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+            return (char *) v;
+         }
+         if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
+            return strdup("DPI mismatch");
+         if ((v = j_get(i, "rows")) && atoi(v) != rows)
+            return strdup("Rows mismatch");
+         if ((v = j_get(i, "cols")) && atoi(v) != cols)
+            return strdup("Cols mismatch");
+         if (j_find(i, "id") && j)
+         {                      // Send print
+            j_err(j_write_func(j, ss_write_func, ss));
+            j_delete(&j);
+         }
+         return NULL;
+      }
+      char *er = j_stream_func(ss_read_func, ss, jin);
+      SSL_shutdown(ss);
+      SSL_free(ss);
+      close(psock);
+      j_delete(&j);
+      if (er && *er)
+         errx(1, "Failed %s", er);
+   }
+
+   if (!rgb && !png && !xidserver)
    {                            // Send layers to matica
       int status = 0;
       pid_t child = fork();

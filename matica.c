@@ -1,4 +1,7 @@
 // Matica printing app
+//
+//	DEPRECATED	replaced by xidserver
+//
 // This talks to Matica printer (tested on XID9300)
 // Main use is to send print images to card, works on a single image file
 // - the file contains a sequence of colour panels (YMCKUYMCKU)
