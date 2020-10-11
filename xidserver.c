@@ -149,7 +149,7 @@ const char *printer_tx(void)
    {
       fprintf(stderr, "Tx%d:", queue);
       int i = 0;
-      for (i = 0; i < buflen && i < 200; i++)
+      for (i = 0; i < buflen && i < 32 * 4 - 4; i++)
          fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
       if (i < buflen)
          fprintf(stderr, "... (%d)", buflen);
@@ -615,7 +615,7 @@ char *client_rx(j_t j)
                int dx = (cols - (int) width) / 2,
                    dy = (rows - (int) height) / 2;
                if (debug)
-                  warnx("PNG %s%d:%ux%u (%d/%d)", tag, side, width, height, dx, dy);
+                  warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag, side, width, height, dx, dy, cols, rows);
                png_set_expand(png_ptr); // Expand palette, etc
                png_set_strip_16(png_ptr);       // Reduce to 8 bit
                png_set_packing(png_ptr);        // Unpack
@@ -643,7 +643,7 @@ char *client_rx(j_t j)
                png_read_update_info(png_ptr, info_ptr);
                if (!layer)
                {                // CMY
-                  png_bytep image = malloc(3 * width);
+                  png_bytep image = malloc(4 * width);
                   for (int layer = 0; layer < 3; layer++)
                   {
                      data[layer] = malloc(rows * cols);
@@ -651,20 +651,22 @@ char *client_rx(j_t j)
                   }
                   for (int r = 0; r < height; r++)
                   {
+                     int y = r + dy;
                      png_read_row(png_ptr, image, NULL);
-                     for (int c = 0; c < width; c++)
-                     {
-                        int x = c + dx,
-                            y = r + dy;
-                        if (x >= 0 && x < cols && y >= 0 && y < rows)
+                     //if(r<2||r>=height-2)warnx("Row %d y=%d Data %02X %02X ... %02X %02X",r,y,image[0],image[1],image[width-2],image[width-1]); // TODO
+                     if (y >= 0 && y < rows)
+                        for (int c = 0; c < width; c++)
                         {
-                           int o = (rows - 1 - y) * cols + (cols - 1 - x);
-                           png_bytep p = image + 3 * c;
-                           data[2][o] = *p++ ^ 0xFF;
-                           data[1][o] = *p++ ^ 0xFF;
-                           data[0][o] = *p++ ^ 0xFF;
+                           int x = c + dx;
+                           if (x >= 0 && x < cols)
+                           {
+                              int o = (rows - 1 - y) * cols + (cols - 1 - x);
+                              png_bytep p = image + 3 * c;
+                              data[2][o] = *p++ ^ 0xFF;
+                              data[1][o] = *p++ ^ 0xFF;
+                              data[0][o] = *p++ ^ 0xFF;
+                           }
                         }
-                     }
                   }
                   for (int layer = 0; layer < 3; layer++)
                   {
@@ -685,20 +687,21 @@ char *client_rx(j_t j)
                   memset(data[layer], 0, rows * cols);
                   for (int r = 0; r < height; r++)
                   {
+                     int y = r + dy;
                      png_read_row(png_ptr, image, NULL);
-                     for (int c = 0; c < width; c++)
-                     {
-                        int x = c + dx,
-                            y = r + dy;
-                        if (x >= 0 && x < cols && y >= 0 && y <= rows)
+                     if (y >= 0 && y < rows)
+                        for (int c = 0; c < width; c++)
                         {
-                           int o = (rows - 1 - y) * cols + (cols - 1 - x);
-                           if (layer == 3)
-                              data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);  // Black
-                           else
-                              data[layer][o] = image[c] ^ 0xFF;
+                           int x = c + dx;
+                           if (x >= 0 && x < cols)
+                           {
+                              int o = (rows - 1 - y) * cols + (cols - 1 - x);
+                              if (layer == 3)
+                                 data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);       // Black
+                              else
+                                 data[layer][o] = image[c] ^ 0xFF;
+                           }
                         }
-                     }
                   }
                   int z;
                   for (z = 0; z < rows * cols && !data[layer][z]; z++);
