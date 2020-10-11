@@ -119,7 +119,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (!xidserver && !png))
+      if (poptPeekArg(optCon) || (!xidserver && !png && !debugimg))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -267,7 +267,7 @@ int main(int argc, const char *argv[])
       free(tmppng);
    }
 
-   if (xidserver)
+   if (xidserver || debugimg)
    {                            // Send to xidserver
       // Make JSON
       j_t j = j_create();
@@ -299,95 +299,97 @@ int main(int argc, const char *argv[])
             munmap(addr, length);
             close(f);
             if (debugimg)
-               printf("<img src='%s'>\n", j_get(s, tag[layer]));
+               printf("<img border=1 src='%s'>\n", j_get(s, tag[layer]));
          }
          for (int layer = 0; layer < layers; layer++)
             add(layer);
       }
       free(panel);
-      // Send
-      int psock = -1;
-      struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
-      struct addrinfo *res = NULL,
-          *a;
-      int r = getaddrinfo(xidserver, xidport, &base, &res);
-      if (r)
-         errx(1, "Cannot get addr info %s", xidserver);
-      for (a = res; a; a = a->ai_next)
-      {
-         int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-         if (s >= 0)
+      if (xidserver)
+      {                         // Send
+         int psock = -1;
+         struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
+         struct addrinfo *res = NULL,
+             *a;
+         int r = getaddrinfo(xidserver, xidport, &base, &res);
+         if (r)
+            errx(1, "Cannot get addr info %s", xidserver);
+         for (a = res; a; a = a->ai_next)
          {
-            if (!connect(s, a->ai_addr, a->ai_addrlen))
+            int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+            if (s >= 0)
             {
-               psock = s;
-               break;
+               if (!connect(s, a->ai_addr, a->ai_addrlen))
+               {
+                  psock = s;
+                  break;
+               }
+               close(s);
             }
-            close(s);
          }
-      }
-      freeaddrinfo(res);
-      if (psock < 0)
-      {
-         if (jsstatus)
-            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Not connected");
-         fflush(stdout);
-         errx(1, "Not connected to xidserver");
-      }
-      SSL_library_init();
-      SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());       // Negotiates TLS
-      if (!ctx)
-         errx(1, "Cannot make ctx");
-      if (certfile && SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
-         errx(1, "Cannot load cert file");
-      if (keyfile && SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-         errx(1, "Cannot load key file");
-      SSL *ss = SSL_new(ctx);
-      if (!ss)
-         errx(1, "Cannot make TLS");
-      if (!SSL_set_fd(ss, psock))
-         errx(1, "Cannot connect socket");
-      if (SSL_connect(ss) != 1)
-         errx(1, "Cannot connect to xid server");
-      char *jin(j_t i) {
-         if (debug)
-            j_err(j_write_pretty(i, stderr));
-         const char *v;
-         if (jsstatus && (v = j_get(i, "status")))
+         freeaddrinfo(res);
+         if (psock < 0)
          {
-            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
-            fflush(stdout);
-         }
-         if (j_find(i, "error"))
-         {
-            v = strdup(j_get(i, "error.description"));
             if (jsstatus)
+               printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Not connected");
+            fflush(stdout);
+            errx(1, "Not connected to xidserver");
+         }
+         SSL_library_init();
+         SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());    // Negotiates TLS
+         if (!ctx)
+            errx(1, "Cannot make ctx");
+         if (certfile && SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+            errx(1, "Cannot load cert file");
+         if (keyfile && SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
+            errx(1, "Cannot load key file");
+         SSL *ss = SSL_new(ctx);
+         if (!ss)
+            errx(1, "Cannot make TLS");
+         if (!SSL_set_fd(ss, psock))
+            errx(1, "Cannot connect socket");
+         if (SSL_connect(ss) != 1)
+            errx(1, "Cannot connect to xid server");
+         char *jin(j_t i) {
+            if (debug)
+               j_err(j_write_pretty(i, stderr));
+            const char *v;
+            if (jsstatus && (v = j_get(i, "status")))
             {
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
                fflush(stdout);
             }
-            return (char *) v;
+            if (j_find(i, "error"))
+            {
+               v = strdup(j_get(i, "error.description"));
+               if (jsstatus)
+               {
+                  printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
+                  fflush(stdout);
+               }
+               return (char *) v;
+            }
+            if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
+               return strdup("DPI mismatch");
+            if ((v = j_get(i, "rows")) && atoi(v) != rows)
+               return strdup("Rows mismatch");
+            if ((v = j_get(i, "cols")) && atoi(v) != cols)
+               return strdup("Cols mismatch");
+            if (j_find(i, "id") && j)
+            {                   // Send print
+               j_err(j_write_func(j, ss_write_func, ss));
+               j_delete(&j);
+            }
+            return NULL;
          }
-         if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
-            return strdup("DPI mismatch");
-         if ((v = j_get(i, "rows")) && atoi(v) != rows)
-            return strdup("Rows mismatch");
-         if ((v = j_get(i, "cols")) && atoi(v) != cols)
-            return strdup("Cols mismatch");
-         if (j_find(i, "id") && j)
-         {                      // Send print
-            j_err(j_write_func(j, ss_write_func, ss));
-            j_delete(&j);
-         }
-         return NULL;
+         char *er = j_stream_func(ss_read_func, ss, jin);
+         SSL_shutdown(ss);
+         SSL_free(ss);
+         close(psock);
+         if (er && *er)
+            errx(1, "Failed %s", er);
       }
-      char *er = j_stream_func(ss_read_func, ss, jin);
-      SSL_shutdown(ss);
-      SSL_free(ss);
-      close(psock);
       j_delete(&j);
-      if (er && *er)
-         errx(1, "Failed %s", er);
    }
    // Cleanup
    if (!debug)
