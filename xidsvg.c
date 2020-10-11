@@ -76,7 +76,7 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
 int main(int argc, const char *argv[])
 {
    int debugimg = 0;
-   int count=0;
+   int count = 0;
    const char *certfile = NULL;
    const char *keyfile = NULL;
    {                            // POPT
@@ -153,6 +153,11 @@ int main(int argc, const char *argv[])
    if (debug)
       fprintf(stderr, "%d side%s, %d layer%s\n", sides, sides == 1 ? "" : "s", layers, layers == 1 ? "" : "s");
 
+   if (jsstatus)
+   {
+      printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Compose");
+      fflush(stdout);
+   }
    char *tmpsvg = strdup("/tmp/cardXXXXXX.svg");
    {
       int f = mkstemps(tmpsvg, 4);
@@ -308,6 +313,11 @@ int main(int argc, const char *argv[])
       free(panel);
       if (xidserver)
       {                         // Send
+         if (jsstatus)
+         {
+            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Connect");
+            fflush(stdout);
+         }
          int psock = -1;
          struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
          struct addrinfo *res = NULL,
@@ -332,8 +342,10 @@ int main(int argc, const char *argv[])
          if (psock < 0)
          {
             if (jsstatus)
+            {
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Not connected");
-            fflush(stdout);
+               fflush(stdout);
+            }
             errx(1, "Not connected to xidserver");
          }
          SSL_library_init();
@@ -355,7 +367,8 @@ int main(int argc, const char *argv[])
             if (debug)
                j_err(j_write_pretty(i, stderr));
             const char *v;
-	    if((v=j_get(i,"count")))count=atoi(v);
+            if ((v = j_get(i, "count")))
+               count = atoi(v);
             if (jsstatus && (v = j_get(i, "status")))
             {
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
@@ -405,5 +418,5 @@ int main(int argc, const char *argv[])
          free(tmp[side][layer]);
       }
    xml_tree_delete(svg);
-   return count?0:1;
+   return count ? 0 : 1;
 }
