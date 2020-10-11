@@ -623,6 +623,19 @@ char *client_rx(j_t j)
                   png_set_gray_to_rgb(png_ptr); // RGB
                png_set_strip_alpha(png_ptr);
                png_set_interlace_handling(png_ptr);
+               // Gamma adjust
+               double screen_gamma = 1.75;      // Seems a good default
+               const char *v = j_get(panel, "@gamma");
+               if (v)
+                  screen_gamma = strtod(v, NULL);
+               if (screen_gamma)
+               {
+                  double gamma = 0;
+                  if (png_get_gAMA(png_ptr, info_ptr, &gamma))
+                     png_set_gamma(png_ptr, screen_gamma, gamma);
+                  else
+                     png_set_gamma(png_ptr, screen_gamma, 0.45455);
+               }
                png_read_update_info(png_ptr, info_ptr);
                if (!layer)
                {                // CMY
@@ -738,7 +751,7 @@ char *client_rx(j_t j)
                   printer_data(rows * cols, data[p]);
                   printer_tx();
                   printed |= (p == 4 ? 0x40 : (1 << p));
-                  while (queue > 2)
+                  while (queue > 3)
                      printer_rx_check();
                }
             while (queue)
