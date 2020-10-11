@@ -220,26 +220,76 @@ const char *printer_rx_check(void)
    printer_rx();
    if (!error && rxerr)
    {
-      if (rxerr == 0x0002DB00)
-         error = "Initialising, not ready";
-      else if (rxerr == 0x0002DA00)
-         error = "Warming up, not ready";
-      else if (rxerr == 0x0002D100)
-         error = "Door open";
-      else if (rxerr == 0x0003A100)
-         error = "Transfer film missing";
-      else if (rxerr == 0x0003B000)
-         error = "Colour film missing";
-      else if (rxerr == 0x0002D000)
-         error = "No cards";
-      else if (rxerr == 0x00039000)
-         error = "Hopper jam";
-      else if (rxerr == 0x00052600)
-         error = "Failed";
-      else if (rxerr == 0x0003AD00)
-         error = "Mag write fail";
-      else
-         error = "Printer returned error (see code)";
+      const char *decode(void) {
+         if (rxerr == 0x0003440)
+            return "Hardware";
+         if (rxerr == 0x00039000)
+            return "Jam(Hopper)";
+         if (rxerr == 0x00039100)
+            return "Jam(TurnOver)";
+         if (rxerr == 0x00039200)
+            return "Jam(MG)";
+         if (rxerr == 0x00039300)
+            return "Jam(Transfer)";
+         if (rxerr == 0x00039400)
+            return "Jam(Discharge)";
+         if (rxerr == 0x00039500)
+            return "Jam(Retran.)";
+         if (rxerr == 0x0003A100)
+            return "Film Search";
+         if (rxerr == 0x0003A800)
+            return "MG Test Err";
+         if (rxerr == 0x0003AB00)
+            return "MG Mechanical";
+         if (rxerr == 0x0003AC00)
+            return "MG Hardware";
+         if (rxerr == 0x0003B000)
+            return "Ink Error";
+         if (rxerr == 0x0003B100)
+            return "Ink Search";
+         if (rxerr == 0x0003B200)
+            return "Ink Run Out";
+         if (rxerr == 0x0002C100)
+            return "Cam Error";
+         if (rxerr == 0x0002C200)
+            return "HR Overheat";
+         if (rxerr == 0x0002C300)
+            return "Power Intrpt";
+         if (rxerr == 0x0002D100)
+            return "Door open";
+         if (rxerr == 0x0002D800)
+            return "Hardware";
+         if (rxerr == 0x0002F000)
+            return "TR Overheat";
+         if (rxerr == 0x0002F100)
+            return "TR Heater";
+         if (rxerr == 0x0002F200)
+            return "TR Thermister";
+         if (rxerr == 0x0002F300)
+            return "RR Overheat";
+         if (rxerr == 0x0002F400)
+            return "RR Heater";
+         if (rxerr == 0x0002F500)
+            return "RR Thermister";
+         if (rxerr == 0x0002F600)
+            return "Overcool";
+         if (rxerr == 0x0002F800)
+            return "Head Overheat";
+         if (rxerr == 0x00052000)
+            return "Bad cmd";
+         if (rxerr == 0x0002DB00)
+            return "Initialising, not ready";
+         if (rxerr == 0x0002DA00)
+            return "Warming up, not ready";
+         if (rxerr == 0x0002D000)
+            return "No cards";
+         if (rxerr == 0x00052600)
+            return "Card position error";
+         if (rxerr == 0x0003AD00)
+            return "Mag write fail";
+         return "Printer returned error (see code)";
+      }
+      error = decode();
    }
    return error;
 }
@@ -340,8 +390,6 @@ const char *check_position(void)
       posn = buf[19];
       if (buf[18])
          posn = POS_OUT;
-      j_t j = j_new();
-      client_tx(j);
    }
    return error;
 }
@@ -406,16 +454,19 @@ const char *client_tx(j_t j)
 
 char *client_rx(j_t j)
 {                               // Process received message
-   if (debug)
+   j_t print = j_find(j, "print");
+   if (print)
    {
-      if (j_find(j, "print"))
-         warnx("Print rx not dumped");
-      else
-         j_err(j_write_pretty(j, stderr));
+      j_detach(print);
+      if (debug)
+         warnx("Print command not dumped");
    }
+   if (debug)
+      j_err(j_write_pretty(j, stderr));
    j_t cmd = NULL;
    if ((cmd = j_find(j, "mag")))
    {
+      // TODO mag read probably should say which tracks to try reading
       unsigned char temp[66 * 3];
       int p = 0;
       int c = 0;
@@ -506,13 +557,15 @@ char *client_rx(j_t j)
    }
    if ((cmd = j_find(j, "ic")))
    {
+      moveto(POS_IC);
       // TODO
    }
    if ((cmd = j_find(j, "rfid")))
    {
+      moveto(POS_RFID);
       // TODO
    }
-   if ((cmd = j_find(j, "print")))
+   if (print)
    {
       unsigned char printed = 0;
       unsigned char side = 0;
@@ -588,7 +641,7 @@ char *client_rx(j_t j)
                             y = r + dy;
                         if (x >= 0 && x < cols && y >= 0 && y <= rows)
                         {
-                           int o = y * cols + x;
+                           int o = (rows - 1 - y) * cols + (cols - 1 - x);
                            png_bytep p = image + 3 * c;
                            data[2][o] = *p++ ^ 0xFF;
                            data[1][o] = *p++ ^ 0xFF;
@@ -622,7 +675,7 @@ char *client_rx(j_t j)
                             y = r + dy;
                         if (x >= 0 && x < cols && y >= 0 && y <= rows)
                         {
-                           int o = y * cols + x;
+                           int o = (rows - 1 - y) * cols + (cols - 1 - x);
                            if (layer == 3)
                               data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);  // Black
                            else
@@ -714,12 +767,12 @@ char *client_rx(j_t j)
          side++;
          return error;
       }
-      if (j_isobject(cmd))
-         print_side(cmd);
-      else if (j_isarray(cmd))
+      if (j_isobject(print))
+         print_side(print);
+      else if (j_isarray(print))
       {
-         print_side(j_index(cmd, 0));
-         print_side(j_index(cmd, 1));
+         print_side(j_index(print, 0));
+         print_side(j_index(print, 1));
       }
       while (queue)
          printer_rx_check();
@@ -734,9 +787,7 @@ char *client_rx(j_t j)
          moveto(POS_EJECT);     // Done anyway
          status = "Unprinted";
       }
-   }
-
-   else if ((cmd = j_find(j, "reject")))
+   } else if ((cmd = j_find(j, "reject")))
       moveto(POS_REJECT);
    else if ((cmd = j_find(j, "eject")))
       moveto(POS_EJECT);
@@ -813,6 +864,9 @@ char *job(const char *from)
    }
    check_status();
    check_position();
+   if (posn >= 0)
+      moveto(POS_REJECT);
+   check_position();
    j_t j = j_new();
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
@@ -824,20 +878,8 @@ char *job(const char *from)
    char *ers = NULL;
    if (!error)
       ers = j_stream_func(ss_read_func, ss, client_rx);
-   if (!error && posn >= 0)
-   {
-      moveto(POS_EJECT);
-      printer_rx_check();
-   }
    if (!ers && error)
       ers = strdup(error);
-   if (error)
-   {
-      error = NULL;
-      check_position();
-      moveto(POS_REJECT);
-      printer_rx();
-   }
    printer_disconnect();
    return ers;
 }
@@ -934,10 +976,6 @@ int main(int argc, const char *argv[])
    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());  // Negotiates TLS
    if (!ctx)
       errx(1, "Cannot create SSL CTX");
-   if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
-      errx(1, "Cannot load cert file");
-   if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-      errx(1, "Cannot load key file");
 
    // Handle connections
    while (1)
@@ -960,6 +998,10 @@ int main(int argc, const char *argv[])
       if (debug)
          warnx("Connect from %s", from);
       char *er = NULL;
+      if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+         errx(1, "Cannot load cert file");
+      if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
+         errx(1, "Cannot load key file");
       ss = SSL_new(ctx);
       if (!ss)
       {
