@@ -1,6 +1,6 @@
 // Card handling - convert SVG to matica for printing
 //
-//	DEPRECATED	Replaced by xidsvg
+//      DEPRECATED      Replaced by xidsvg
 //
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
 // Expects print layers (id) C1, K1, U1, C2, K2, U2, and @layers and @sides defined, etc
@@ -371,7 +371,7 @@ int main(int argc, const char *argv[])
       fclose(f);
    }
 
-   if (!rgb && !png )
+   if (!rgb && !png)
    {                            // Send layers to matica
       int status = 0;
       pid_t child = fork();

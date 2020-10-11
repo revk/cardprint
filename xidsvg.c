@@ -36,16 +36,6 @@ char *xidserver = quoted(XIDSERVER);
 #else
 char *xidserver = NULL;
 #endif
-#ifdef	PRINTER
-char *printer = quoted(PRINTER);
-#else
-char *printer = NULL;
-#endif
-#ifdef	PORTNAME
-char *portname = quoted(PORTNAME);
-#else
-char *portname = "9100";
-#endif
 #ifdef	PRINTCOLS
 const int cols = PRINTCOLS;
 #else
@@ -64,7 +54,6 @@ int dpi = -1;
 
 int debug = 0;
 int png = 0;
-int rgb = 0;
 int loaded = 0;
 int retain = 0;
 int uvsingle = 0;
@@ -88,19 +77,14 @@ int main(int argc, const char *argv[])
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
-#ifndef	PRINTER
-         { "printer", 'P', POPT_ARG_STRING | (printer ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &printer, 0, "Printer", "IP/hostname" },
-#endif
 #ifndef	XIDSERVER
          { "xidserver", 'S', POPT_ARG_STRING, &xidserver, 0, "Send to xidserver", "hostname" },
 #endif
-         { "port", 0, POPT_ARG_STRING | (portname ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &portname, 0, "Port", "number/name" },
          { "loaded", 'L', POPT_ARG_NONE, &loaded, 0, "Expect card to be loaded" },
          { "retain", 'K', POPT_ARG_NONE, &retain, 0, "Retain card" },
          { "uv-single", 0, POPT_ARG_NONE, &uvsingle, 0, "UV on same retransfer" },
          { "copies", 'N', POPT_ARGFLAG_SHOW_DEFAULT | POPT_ARG_INT, &copies, 0, "Copies", "N" },
          { "js-status", 'j', POPT_ARG_STRING, &jsstatus, 0, "Javascript output", "html-ID" },
-         { "rgb", 'r', POPT_ARG_NONE, &rgb, 0, "Make RGB instead of printing" },
          { "png", 'p', POPT_ARG_NONE, &png, 0, "Make PNG instead of printing" },
 #ifndef	DPI
          { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "dpi" },
@@ -128,7 +112,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (rgb && png) || (!xidserver && !rgb && !png && !printer) || (xidserver && printer))
+      if (poptPeekArg(optCon) || (!xidserver && !png))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -380,20 +364,18 @@ int main(int argc, const char *argv[])
       free(tmppng);
    }
 
-   if (rgb)
-   {                            // Output RGB
-      FILE *f = fopen(tmprgb, "r");
-      int c;
-      while ((c = fgetc(f)) >= 0)
-         putchar(c);
-      fclose(f);
-   }
-
    if (xidserver)
    {                            // Send to xidserver
       // Make JSON
       FILE *f = fopen(tmprgb, "r");
       j_t j = j_create();
+      if (mag1 || mag2 || mag3)
+      {
+         j_t m = j_store_array(j, "mag");
+         j_append_string(m, mag1);
+         j_append_string(m, mag2);
+         j_append_string(m, mag3);
+      }
       j_t p = j_store_array(j, "print");
       unsigned char *panel = malloc(cols * rows);
       char *b64 = malloc((cols * rows * 8 + 5) / 6 + 3);        // Allow ==[null]
@@ -485,66 +467,6 @@ int main(int argc, const char *argv[])
          errx(1, "Failed %s", er);
    }
 
-   if (!rgb && !png && !xidserver)
-   {                            // Send layers to matica
-      int status = 0;
-      pid_t child = fork();
-      if (child)
-         waitpid(child, &status, 0);
-      else
-      {
-         char *args[100];
-         int a = 0,
-             i;
-         args[a++] = "matica";
-         args[a++] = "--printer";
-         args[a++] = printer;
-         args[a++] = "--port";
-         args[a++] = portname;
-         if (retain)
-            args[a++] = "--retain";
-         if (uvsingle)
-            args[a++] = "--uv-single";
-         if (copies > 1)
-         {
-            if (asprintf(&args[a++], "--copies=%d", copies) < 0)
-               errx(1, "malloc");
-         }
-         if (jsstatus)
-         {
-            args[a++] = "--js-status";
-            args[a++] = jsstatus;
-         }
-         if (mag1)
-         {
-            args[a++] = "--mag1";
-            args[a++] = mag1;
-         }
-         if (mag2)
-         {
-            args[a++] = "--mag2";
-            args[a++] = mag2;
-         }
-         if (mag3)
-         {
-            args[a++] = "--mag3";
-            args[a++] = mag3;
-         }
-         args[a++] = "--image";
-         args[a++] = tmprgb;
-
-         if (debug)
-            args[a++] = "--debug";
-         args[a++] = NULL;
-         if (debug)
-            for (i = 0; i < a; i++)
-               fprintf(stderr, "%s%s", i ? " " : "", args[i] ? : "\n");
-         execv("/projects/tools/bin/matica", (char *const *) args);
-         return 1;
-      }
-      if (!WIFEXITED(status) || WEXITSTATUS(status))
-         errx(1, "matica failed");
-   }
    // Cleanup
    if (!debug)
       unlink(tmpsvg);
