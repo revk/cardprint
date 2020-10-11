@@ -627,7 +627,7 @@ char *client_rx(j_t j)
                png_set_interlace_handling(png_ptr);
 #if 0
                // Gamma adjust
-               double screen_gamma = 1.9;      // Seems a good default
+               double screen_gamma = 1.9;       // Seems a good default
                const char *v = j_get(panel, "@gamma");
                if (v)
                   screen_gamma = strtod(v, NULL);
@@ -656,7 +656,7 @@ char *client_rx(j_t j)
                      {
                         int x = c + dx,
                             y = r + dy;
-                        if (x >= 0 && x < cols && y >= 0 && y <= rows)
+                        if (x >= 0 && x < cols && y >= 0 && y < rows)
                         {
                            int o = (rows - 1 - y) * cols + (cols - 1 - x);
                            png_bytep p = image + 3 * c;
@@ -758,8 +758,6 @@ char *client_rx(j_t j)
                   while (queue > 3)
                      printer_rx_check();
                }
-            while (queue)
-               printer_rx_check();
             if (printed)
             {
                if (j_test(panel, "uvsingle", 0))
@@ -773,7 +771,11 @@ char *client_rx(j_t j)
                      status = "UV";
                      client_tx(j_new());
                      if (printed & 0x0F)
+                     {
+                        status = "UV";
+                        client_tx(j_new());
                         printer_queue_cmd(0x07020000);  // first transfer of non UV
+                     }
                      printer_queue_cmd(0x06020000 + (printed & 0x40));  // UV print
                   }
                }
