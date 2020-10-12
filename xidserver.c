@@ -18,6 +18,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <netdb.h>
 #include <err.h>
@@ -948,7 +950,6 @@ int main(int argc, const char *argv[])
    const char *bindhost = NULL;
    const char *port = "7810";
    int background = 0;
-   int single = 0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -959,7 +960,6 @@ int main(int argc, const char *argv[])
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
-         { "single", 0, POPT_ARG_NONE | POPT_ARGFLAG_DOC_HIDDEN, &single, 0, "Single run (for memory debug)" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -990,7 +990,7 @@ int main(int argc, const char *argv[])
       err(1, "Failed to get address info");
    if (!res)
       err(1, "Cannot find port");
-   const char *err = NULL;
+   const char *er = NULL;
    for (r = res; r && r->ai_family != AF_INET6; r = r->ai_next);
    if (!r)
       r = res;
@@ -999,35 +999,35 @@ int main(int argc, const char *argv[])
       l = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
       if (l < 0)
       {
-         err = "Cannot create socket";
+         er = "Cannot create socket";
          continue;
       }
       int on = 1;
       if (setsockopt(l, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
       {
          close(l);
-         err = "Failed to set socket option (REUSE)";
+         er = "Failed to set socket option (REUSE)";
          continue;
       }
       if (bind(l, r->ai_addr, r->ai_addrlen))
       {
          close(l);
-         err = "Failed to bind to address";
+         er = "Failed to bind to address";
          continue;
       }
       if (listen(l, 10))
       {
          close(l);
-         err = "Could not listen on port";
+         er = "Could not listen on port";
          continue;
       }
       // Worked
-      err = NULL;
+      er = NULL;
       break;
    }
    freeaddrinfo(res);
-   if (err)
-      errx(1, "Failed: %s", err);
+   if (er)
+      errx(1, "Failed: %s", er);
 
    SSL_library_init();
    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());  // Negotiates TLS
@@ -1045,61 +1045,70 @@ int main(int argc, const char *argv[])
          warn("Bad accept");
          continue;
       }
-      char from[INET6_ADDRSTRLEN + 1] = "";
-      if (addr.sin6_family == AF_INET)
-         inet_ntop(addr.sin6_family, &((struct sockaddr_in *) &addr)->sin_addr, from, sizeof(from));
-      else
-         inet_ntop(addr.sin6_family, &addr.sin6_addr, from, sizeof(from));
-      if (!strncmp(from, "::ffff:", 7) && strchr(from, '.'))
-         memmove(from, from + 7, strlen(from + 7) + 1);
-      if (debug)
-         warnx("Connect from %s", from);
-      char *er = NULL;
-      if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
-         errx(1, "Cannot load cert file");
-      if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-         errx(1, "Cannot load key file");
-      ss = SSL_new(ctx);
-      if (!ss)
-      {
-         warnx("Cannot create SSL server structure");
-         close(s);
-         continue;
-      }
-      if (!SSL_set_fd(ss, s))
-      {
-         close(s);
-         SSL_free(ss);
-         ss = NULL;
-         warnx("Could not set client SSL fd");
-         continue;
-      }
-      if (SSL_accept(ss) != 1)
-      {
-         close(s);
-         SSL_free(ss);
-         ss = NULL;
-         warnx("Could not establish SSL client connection");
-         continue;
-      }
+      pid_t pid = fork();
+      if (pid < 0)
+         err(1, "Forking hell");
+      if (!pid)
+      {                         // Child (fork to ensure memory leaks never and issue - yeh, cheating)
+         char from[INET6_ADDRSTRLEN + 1] = "";
+         if (addr.sin6_family == AF_INET)
+            inet_ntop(addr.sin6_family, &((struct sockaddr_in *) &addr)->sin_addr, from, sizeof(from));
+         else
+            inet_ntop(addr.sin6_family, &addr.sin6_addr, from, sizeof(from));
+         if (!strncmp(from, "::ffff:", 7) && strchr(from, '.'))
+            memmove(from, from + 7, strlen(from + 7) + 1);
+         if (debug)
+            warnx("Connect from %s", from);
+         char *er = NULL;
+         if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+            errx(1, "Cannot load cert file");
+         if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
+            errx(1, "Cannot load key file");
+         ss = SSL_new(ctx);
+         if (!ss)
+         {
+            warnx("Cannot create SSL server structure");
+            close(s);
+            continue;
+         }
+         if (!SSL_set_fd(ss, s))
+         {
+            close(s);
+            SSL_free(ss);
+            ss = NULL;
+            warnx("Could not set client SSL fd");
+            continue;
+         }
+         if (SSL_accept(ss) != 1)
+         {
+            close(s);
+            SSL_free(ss);
+            ss = NULL;
+            warnx("Could not establish SSL client connection");
+            continue;
+         }
 
-      if (!er)
-         er = job(from);
-      if (debug)
-         warnx("Finished %s: %s", from, er ? : "OK");
-      if (er && *er)
-      {
-         j_t j = j_new();
-         client_tx(j);
+         if (!er)
+            er = job(from);
+         if (debug)
+            warnx("Finished %s: %s", from, er ? : "OK");
+         if (er && *er)
+         {
+            j_t j = j_new();
+            client_tx(j);
+         }
+         if (er)
+            free(er);
+         SSL_shutdown(ss);
+         SSL_free(ss);
+         ss = NULL;
+         return 0;
       }
-      if (er)
-         free(er);
-      SSL_shutdown(ss);
-      SSL_free(ss);
-      ss = NULL;
+      int pstatus = 0;
+      waitpid(pid, &pstatus, 0);
+      if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
+         warnx("Job failed");
       close(s);
-      if (single)
-         break;                 // debug one run
    }
 
    return 0;

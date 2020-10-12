@@ -4,7 +4,7 @@ all: ${TARGETS}
 clean:
 	rm -f ${TARGETS}
 
-OPTS=-g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99 -Wall
+OPTS=-fPIC -g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99 -Wall
 
 AXL/axl.c:
 	git submodule init AXL
