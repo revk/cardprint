@@ -406,7 +406,11 @@ int main(int argc, const char *argv[])
       SSL_free(ss);
       close(psock);
       if (er && *er)
+      {
+	      status(er);
          errx(1, "Failed %s", er);
+      }
+      if(!count)status("Nothing printed");
    }
    return count ? 0 : 1;
 }
