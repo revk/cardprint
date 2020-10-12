@@ -1,8 +1,12 @@
 // Card handling - convert SVG to matica for printing
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
-// Expects print layers (id) C1, K1, U1, C2, K2, U2, and @layers and @sides defined, etc
-// Expects to be convertible at 300dpi to an image covering card (ideally at least 1024x648 to 1036x664), but centres if smaller/larger
-// At present this prints to matica, but the idea is that if we make other drivers this will have options to use them instead
+// Expects inkscape tagged print layers (id) C1, K1, U1, C2, K2, U2
+// Top level XML tags handled
+// sides	Number of sides, 1 or 2
+// layers	Number of layers 1 to 3 (colour, black, UK)
+// rows		Number of print pixel rows expected
+// cols		Number of print pixel cols expected
+// dpi		DPI expected
 
 #include <stdio.h>
 #include <string.h>
@@ -54,7 +58,7 @@ int dpi = -1;
 #endif
 
 int debug = 0;
-int png = 0;
+int img=0;
 int loaded = 0;
 int retain = 0;
 int uvsingle = 0;
@@ -75,7 +79,6 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
 
 int main(int argc, const char *argv[])
 {
-   int debugimg = 0;
    int count = 0;
    const char *certfile = NULL;
    const char *keyfile = NULL;
@@ -92,7 +95,7 @@ int main(int argc, const char *argv[])
          { "uv-single", 0, POPT_ARG_NONE, &uvsingle, 0, "UV on same retransfer" },
          { "copies", 'N', POPT_ARGFLAG_SHOW_DEFAULT | POPT_ARG_INT, &copies, 0, "Copies", "N" },
          { "js-status", 'j', POPT_ARG_STRING, &jsstatus, 0, "Javascript output", "html-ID" },
-         { "png", 'p', POPT_ARG_NONE, &png, 0, "Make PNG instead of printing" },
+         { "img", 'p', POPT_ARG_NONE, &img, 0, "Make image preview" },
 #ifndef	DPI
          { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "dpi" },
 #endif
@@ -104,7 +107,6 @@ int main(int argc, const char *argv[])
 #endif
          { "input", 'i', POPT_ARG_STRING, &input, 0, "Input file (else stdin)", "filename" },
          { "output", 'o', POPT_ARG_STRING, &output, 0, "Output file (else stdout)", "filename" },
-         { "debug-img", 0, POPT_ARG_NONE, &debugimg, 0, "Debug img" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -120,7 +122,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (!xidserver && !png && !debugimg))
+      if (poptPeekArg(optCon) || (!xidserver && !img ))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -131,12 +133,6 @@ int main(int argc, const char *argv[])
       err(1, "Cannot open %s", output);
    if (input && !freopen(input, "r", stdin))
       err(1, "Cannot open %s", input);
-   if (dpi < 0)
-      dpi = 300;
-   if (rows < 0)
-      rows = 664 * dpi / 300;
-   if (cols < 0)
-      cols = 1036 * dpi / 300;
    // Read SVG
    xml_t svg = xml_tree_read(stdin);
    if (!svg)
@@ -147,6 +143,25 @@ int main(int argc, const char *argv[])
    int layers = atoi(xml_get(svg, "@layers") ? : "");
    if (!layers || layers > 3)
       errx(1, "Needs to be created for print, with @layers at top level");
+   int v;
+   if((v=atoi(xml_get(svg,"@dpi")?:""))){
+	   if(dpi<0)dpi=v;
+	   else if(dpi!=v)errx(1,"DPI mismatch, expecting %d not %d",v,dpi);
+   }
+   if((v=atoi(xml_get(svg,"@rows")?:""))){
+	   if(rows<0)rows=v;
+	   else if(rows!=v)errx(1,"Rows mismatch, expecting %d not %d",v,rows);
+   }
+   if((v=atoi(xml_get(svg,"@cols")?:""))){
+	   if(cols<0)cols=v;
+	   else if(cols!=v)errx(1,"Cols mismatch, expecting %d not %d",v,cols);
+   }
+   if (dpi < 0)
+      dpi = 300;
+   if (rows < 0)
+      rows = 664 * dpi / 300;
+   if (cols < 0)
+      cols = 1036 * dpi / 300;
    char *mag1 = xml_get(svg, "@track1");
    char *mag2 = xml_get(svg, "@track2");
    char *mag3 = xml_get(svg, "@track3");
@@ -218,62 +233,7 @@ int main(int argc, const char *argv[])
             errx(1, "inkscape failed");
       }
 
-   if (png)
-   {                            // Make png montage
-      char *tmppng = strdup("/tmp/cardXXXXXX.png");
-      {
-         int f = mkstemps(tmppng, 4);
-         if (f < 0)
-            errx(1, "Cannot make temp %s", tmppng);
-         close(f);
-      }
-      int status = 0;
-      pid_t child = fork();
-      if (child)
-         waitpid(child, &status, 0);
-      else
-      {
-         char *args[100];
-         int a = 0,
-             i;
-         args[a++] = "gm";
-         args[a++] = "montage";
-         args[a++] = "-gravity";
-         args[a++] = "center";
-         args[a++] = "-geometry";
-         if (asprintf(&args[a++], "%dx%d", cols, rows) < 0)
-            errx(1, "malloc");
-         args[a++] = "-tile";
-         if (asprintf(&args[a++], "%dx%d", sides, layers) < 0)
-            errx(1, "malloc");
-         for (int layer = 0; layer < layers; layer++)
-            for (int side = 0; side < sides; side++)
-               args[a++] = tmp[side][layer];
-         args[a++] = tmppng;
-         args[a++] = NULL;
-         if (debug)
-            for (i = 0; i < a; i++)
-               fprintf(stderr, "%s%s", i ? " " : "", args[i] ? : "\n");
-         int n = open("/dev/null", 0);
-         dup2(n, 1);
-         dup2(n, 2);
-         close(n);
-         execv("/usr/bin/gm", (char *const *) args);
-         return 1;
-      }
-      if (!WIFEXITED(status) || WEXITSTATUS(status))
-         errx(1, "gm failed");
-      FILE *f = fopen(tmppng, "r");
-      int c;
-      while ((c = fgetc(f)) >= 0)
-         putchar(c);
-      fclose(f);
-      if (!debug)
-         unlink(tmppng);
-      free(tmppng);
-   }
-
-   if (xidserver || debugimg)
+   if (xidserver || img)
    {                            // Send to xidserver
       // Make JSON
       j_t j = j_create();
@@ -304,7 +264,7 @@ int main(int argc, const char *argv[])
             j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
             munmap(addr, length);
             close(f);
-            if (debugimg)
+            if (img)
                printf("<img border=1 src='%s'>\n", j_get(s, tag[layer]));
          }
          for (int layer = 0; layer < layers; layer++)
