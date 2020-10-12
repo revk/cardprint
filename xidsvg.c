@@ -135,7 +135,7 @@ int main(int argc, const char *argv[])
          printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, status);
          fflush(stdout);
       }
-      if (*status)
+      if (*status == '*')
          errx(1, "%s", status + 1);
    }
 
@@ -376,7 +376,7 @@ int main(int argc, const char *argv[])
          {
             if (dpi < 0)
                dpi = n;
-            else if (dpi!=n)
+            else if (dpi != n)
                return strdup("DPI mismatch");
          }
          if ((n = atoi(j_get(i, "rows") ? : "")))
