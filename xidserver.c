@@ -37,6 +37,79 @@ const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
 #define	POS_REJECT	4
 #define	POS_EJECT	5
 
+static const char *msg(unsigned int e)
+{
+   if (e == 0x0002DA00)
+      return "Warming up, not ready";
+   if (e == 0x0002DB00)
+      return "Initialising, not ready";
+   if (e == 0x0002D000)
+      return "No cards";
+   if (e == 0x0002C100)
+      return "Cam Error";
+   if (e == 0x0002C200)
+      return "HR Overheat";
+   if (e == 0x0002C300)
+      return "Power Intrpt";
+   if (e == 0x0002D100)
+      return "Door open";
+   if (e == 0x0002D300)
+      return "Busy";
+   if (e == 0x0002D800)
+      return "Hardware";
+   if (e == 0x0002F000)
+      return "TR Overheat";
+   if (e == 0x0002F100)
+      return "TR Heater";
+   if (e == 0x0002F200)
+      return "TR Thermister";
+   if (e == 0x0002F300)
+      return "RR Overheat";
+   if (e == 0x0002F400)
+      return "RR Heater";
+   if (e == 0x0002F500)
+      return "RR Thermister";
+   if (e == 0x0002F600)
+      return "Overcool";
+   if (e == 0x0002F800)
+      return "Head Overheat";
+   if (e == 0x00034400)
+      return "Hardware";
+   if (e == 0x00039000)
+      return "Jam(Hopper)";
+   if (e == 0x00039100)
+      return "Jam(TurnOver)";
+   if (e == 0x00039200)
+      return "Jam(MG)";
+   if (e == 0x00039300)
+      return "Jam(Transfer)";
+   if (e == 0x00039400)
+      return "Jam(Discharge)";
+   if (e == 0x00039500)
+      return "Jam(Retran.)";
+   if (e == 0x0003A100)
+      return "Film Search";
+   if (e == 0x0003A800)
+      return "MG Test Err";
+   if (e == 0x0003AB00)
+      return "MG Mechanical";
+   if (e == 0x0003AC00)
+      return "MG Hardware";
+   if (e == 0x0003B000)
+      return "Ink Error";
+   if (e == 0x0003B100)
+      return "Ink Search";
+   if (e == 0x0003B200)
+      return "Ink Run Out";
+   if (e == 0x00052000)
+      return "Bad cmd";
+   if (e == 0x00052600)
+      return "Card position error";
+   if (e == 0x0003AD00)
+      return "Mag write fail";
+   return "Printer returned error (see code)";
+}
+
 // Config
 int debug = 0;                  // Top level debug
 const char *printhost = NULL;   // Printer host/IP
@@ -58,6 +131,7 @@ const char *error = NULL;       // Error happened (stops more processing)
 const char *status = NULL;      // Status
 int queue = 0;                  // Command queue
 int posn = 0;                   // Current card position
+int count = 0;                  // Print count
 int dpi = 0,
     rows = 0,
     cols = 0;                   // Size
@@ -81,6 +155,8 @@ j_t j_new(void)
       if (rxerr)
          j_store_stringf(e, "code", "%08X", rxerr);
    }
+   if (count)
+      j_store_int(j, "count", count);
    return j;
 }
 
@@ -213,86 +289,41 @@ const char *printer_rx(void)
    return NULL;
 }
 
+const char *printer_start_cmd(unsigned int cmd);
+
 const char *printer_rx_check(void)
 {
    if (error)
       return error;
    printer_rx();
-   if (!error && rxerr)
-   {
-      const char *decode(void) {
-         if (rxerr == 0x00034400)
-            return "Hardware";
-         if (rxerr == 0x00039000)
-            return "Jam(Hopper)";
-         if (rxerr == 0x00039100)
-            return "Jam(TurnOver)";
-         if (rxerr == 0x00039200)
-            return "Jam(MG)";
-         if (rxerr == 0x00039300)
-            return "Jam(Transfer)";
-         if (rxerr == 0x00039400)
-            return "Jam(Discharge)";
-         if (rxerr == 0x00039500)
-            return "Jam(Retran.)";
-         if (rxerr == 0x0003A100)
-            return "Film Search";
-         if (rxerr == 0x0003A800)
-            return "MG Test Err";
-         if (rxerr == 0x0003AB00)
-            return "MG Mechanical";
-         if (rxerr == 0x0003AC00)
-            return "MG Hardware";
-         if (rxerr == 0x0003B000)
-            return "Ink Error";
-         if (rxerr == 0x0003B100)
-            return "Ink Search";
-         if (rxerr == 0x0003B200)
-            return "Ink Run Out";
-         if (rxerr == 0x0002C100)
-            return "Cam Error";
-         if (rxerr == 0x0002C200)
-            return "HR Overheat";
-         if (rxerr == 0x0002C300)
-            return "Power Intrpt";
-         if (rxerr == 0x0002D100)
-            return "Door open";
-         if (rxerr == 0x0002D300)
-            return "Print error";
-         if (rxerr == 0x0002D800)
-            return "Hardware";
-         if (rxerr == 0x0002F000)
-            return "TR Overheat";
-         if (rxerr == 0x0002F100)
-            return "TR Heater";
-         if (rxerr == 0x0002F200)
-            return "TR Thermister";
-         if (rxerr == 0x0002F300)
-            return "RR Overheat";
-         if (rxerr == 0x0002F400)
-            return "RR Heater";
-         if (rxerr == 0x0002F500)
-            return "RR Thermister";
-         if (rxerr == 0x0002F600)
-            return "Overcool";
-         if (rxerr == 0x0002F800)
-            return "Head Overheat";
-         if (rxerr == 0x00052000)
-            return "Bad cmd";
-         if (rxerr == 0x0002DB00)
-            return "Initialising, not ready";
-         if (rxerr == 0x0002DA00)
-            return "Warming up, not ready";
-         if (rxerr == 0x0002D000)
-            return "No cards";
-         if (rxerr == 0x00052600)
-            return "Card position error";
-         if (rxerr == 0x0003AD00)
-            return "Mag write fail";
-         return "Printer returned error (see code)";
+   if (!error && (rxerr >> 16) == 2)
+   {                            // Wait
+      while (queue)
+         printer_rx();
+      time_t giveup = time(0) + 300;
+      const char *last = NULL;
+      while ((rxerr >> 16) == 2 && !error && time(0) < giveup)
+      {
+         const char *warn = msg(rxerr);
+         rxerr = 0;
+         if (warn != last)
+         {
+            last = warn;
+            j_t j = j_new();
+            j_store_string(j, "status", warn);
+            j_store_boolean(j, "wait", 1);
+            client_tx(j);
+         }
+         usleep(100000);
+         printer_start_cmd(0x01020000);
+         printer_tx();
+         printer_rx();
       }
-      error = decode();
+      if (!rxerr)
+         client_tx(j_new());
    }
+   if (!error && rxerr)
+      error = msg(rxerr);
    return error;
 }
 
@@ -625,21 +656,20 @@ char *client_rx(j_t j)
                   png_set_gray_to_rgb(png_ptr); // RGB
                png_set_strip_alpha(png_ptr);
                png_set_interlace_handling(png_ptr);
-#if 0
                // Gamma adjust
-               double screen_gamma = 1.9;       // Seems a good default
                const char *v = j_get(panel, "@gamma");
                if (v)
-                  screen_gamma = strtod(v, NULL);
-               if (screen_gamma)
                {
-                  double gamma = 0;
-                  if (png_get_gAMA(png_ptr, info_ptr, &gamma))
-                     png_set_gamma(png_ptr, screen_gamma, gamma);
-                  else
-                     png_set_gamma(png_ptr, screen_gamma, 0.45455);
+                  double screen_gamma = strtod(v, NULL);
+                  if (screen_gamma)
+                  {
+                     double gamma = 0;
+                     if (png_get_gAMA(png_ptr, info_ptr, &gamma))
+                        png_set_gamma(png_ptr, screen_gamma, gamma);
+                     else
+                        png_set_gamma(png_ptr, screen_gamma, 1);
+                  }
                }
-#endif
                png_read_update_info(png_ptr, info_ptr);
                if (!layer)
                {                // CMY
@@ -653,7 +683,7 @@ char *client_rx(j_t j)
                   {
                      int y = r + dy;
                      png_read_row(png_ptr, image, NULL);
-                     //if(r<2||r>=height-2)warnx("Row %d y=%d Data %02X %02X ... %02X %02X",r,y,image[0],image[1],image[width-2],image[width-1]); // TODO
+                     //if (r < 2 || r >= height - 2) warnx("Row %d y=%d Data %02X %02X ... %02X %02X", r, y, image[0], image[1], image[width - 2], image[width - 1]);
                      if (y >= 0 && y < rows)
                         for (int c = 0; c < width; c++)
                         {
@@ -783,6 +813,7 @@ char *client_rx(j_t j)
                   }
                }
             }
+            check_status();
          }
          for (int i = 0; i < 8; i++)
             if (data[i])
@@ -805,6 +836,7 @@ char *client_rx(j_t j)
          client_tx(j_new());
          printer_cmd(0x07020000 + (posn = POS_EJECT));
          status = "Printed";
+         count++;
       } else
       {
          moveto(POS_EJECT);     // Done anyway
@@ -827,6 +859,7 @@ char *client_rx(j_t j)
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
    // Connect to printer, get answer back, report to client
+   count = 0;
    printer_connect();
    printer_rx_check();
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
