@@ -378,6 +378,7 @@ const char *printer_start_cmd(unsigned int cmd)
    // Commands
    // 1: Check status
    // 2: Check position
+   // 3: Initialise
    // 4: Load Move (third byte 80 for load, 10 for flip, forth is position)
    // 5: Move (forth is position)
    // 6: Print to transfer film (forth byte is layers to transfer)
@@ -801,14 +802,14 @@ char *client_rx(j_t j)
                      printer_queue_cmd(0x06020000 + (printed & 0x0F));  // Non UV, if any
                   if (printed & 0x40)
                   {             // UV
-                     status = "UV";
-                     client_tx(j_new());
                      if (printed & 0x0F)
                      {
-                        status = "UV";
+                        status = "Printing";
                         client_tx(j_new());
                         printer_queue_cmd(0x07020000);  // first transfer of non UV
                      }
+                     status = "UV";
+                     client_tx(j_new());
                      printer_queue_cmd(0x06020000 + (printed & 0x40));  // UV print
                   }
                }
