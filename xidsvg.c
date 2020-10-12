@@ -377,27 +377,28 @@ int main(int argc, const char *argv[])
             if (dpi < 0)
                dpi = n;
             else if (dpi != n)
-               return strdup("DPI mismatch");
+               return strdup("DPI mismatch (printer)");
          }
          if ((n = atoi(j_get(i, "rows") ? : "")))
          {
             if (rows < 0)
                rows = n;
             else if (rows != n)
-               return strdup("Rows mismatch");
+               return strdup("Rows mismatch (printer)");
          }
          if ((n = atoi(j_get(i, "cols") ? : "")))
          {
             if (cols < 0)
                cols = n;
             else if (cols != n)
-               return strdup("Cols mismatch");
+               return strdup("Cols mismatch (printer)");
          }
          if (j_find(i, "id"))
          {                      // Send print
             j_t j = compose();
             j_err(j_write_func(j, ss_write_func, ss));
             j_delete(&j);
+	    status("Printing");
          }
          return NULL;
       }
