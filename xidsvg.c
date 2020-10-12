@@ -2,11 +2,11 @@
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
 // Expects inkscape tagged print layers (id) C1, K1, U1, C2, K2, U2
 // Top level XML tags handled
-// sides	Number of sides, 1 or 2
-// layers	Number of layers 1 to 3 (colour, black, UK)
-// rows		Number of print pixel rows expected
-// cols		Number of print pixel cols expected
-// dpi		DPI expected
+// sides        Number of sides, 1 or 2
+// layers       Number of layers 1 to 3 (colour, black, UK)
+// rows         Number of print pixel rows expected
+// cols         Number of print pixel cols expected
+// dpi          DPI expected
 
 #include <stdio.h>
 #include <string.h>
@@ -58,7 +58,7 @@ int dpi = -1;
 #endif
 
 int debug = 0;
-int img=0;
+int img = 0;
 int loaded = 0;
 int retain = 0;
 int uvsingle = 0;
@@ -122,39 +122,58 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (!xidserver && !img ))
+      if (poptPeekArg(optCon) || (!xidserver && !img))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
       }
       poptFreeContext(optCon);
    }
+   void status(const char *status) {    // Report status (if start * then error)
+      if (jsstatus)
+      {
+         printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, status);
+         fflush(stdout);
+      }
+      if (*status)
+         errx(1, "%s", status + 1);
+   }
+
    if (output && !freopen(output, "w", stdout))
-      err(1, "Cannot open %s", output);
+      status("*Cannot open output");
    if (input && !freopen(input, "r", stdin))
-      err(1, "Cannot open %s", input);
+      status("*Cannot open input");
    // Read SVG
    xml_t svg = xml_tree_read(stdin);
    if (!svg)
-      errx(1, "Cannot load SVG");
+      status("*Cannot load svg");
    int sides = atoi(xml_get(svg, "@sides") ? : "");
    if (!sides || sides > 2)
-      errx(1, "Needs to be created for print, with @sides at top level");
+      status("Not created for print, expects \"sides\"= at top level");
    int layers = atoi(xml_get(svg, "@layers") ? : "");
    if (!layers || layers > 3)
-      errx(1, "Needs to be created for print, with @layers at top level");
+      status("Not created for print, expects \"layerss\"= at top level");
    int v;
-   if((v=atoi(xml_get(svg,"@dpi")?:""))){
-	   if(dpi<0)dpi=v;
-	   else if(dpi!=v)errx(1,"DPI mismatch, expecting %d not %d",v,dpi);
+   if ((v = atoi(xml_get(svg, "@dpi") ? : "")))
+   {
+      if (dpi < 0)
+         dpi = v;
+      else if (dpi != v)
+         status("*DPI mismatch");
    }
-   if((v=atoi(xml_get(svg,"@rows")?:""))){
-	   if(rows<0)rows=v;
-	   else if(rows!=v)errx(1,"Rows mismatch, expecting %d not %d",v,rows);
+   if ((v = atoi(xml_get(svg, "@rows") ? : "")))
+   {
+      if (rows < 0)
+         rows = v;
+      else if (rows != v)
+         status("*Rows mismatch");
    }
-   if((v=atoi(xml_get(svg,"@cols")?:""))){
-	   if(cols<0)cols=v;
-	   else if(cols!=v)errx(1,"Cols mismatch, expecting %d not %d",v,cols);
+   if ((v = atoi(xml_get(svg, "@cols") ? : "")))
+   {
+      if (cols < 0)
+         cols = v;
+      else if (cols != v)
+         status("*Cols mismatch");
    }
    if (dpi < 0)
       dpi = 300;
@@ -165,19 +184,13 @@ int main(int argc, const char *argv[])
    char *mag1 = xml_get(svg, "@track1");
    char *mag2 = xml_get(svg, "@track2");
    char *mag3 = xml_get(svg, "@track3");
-   if (debug)
-      fprintf(stderr, "%d side%s, %d layer%s\n", sides, sides == 1 ? "" : "s", layers, layers == 1 ? "" : "s");
 
-   if (jsstatus)
-   {
-      printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Compose");
-      fflush(stdout);
-   }
+   status("Compose");
    char *tmpsvg = strdup("/tmp/cardXXXXXX.svg");
    {
       int f = mkstemps(tmpsvg, 4);
       if (f < 0)
-         errx(1, "Cannot make temp %s", tmpsvg);
+         status("*Cannot make svg tmp file");
       FILE *o = fdopen(f, "w");
       xml_write(o, svg);
       fclose(o);
@@ -193,7 +206,7 @@ int main(int argc, const char *argv[])
          tmp[side][layer][10] = '1' + side;
          int f = mkstemps(tmp[side][layer], 4);
          if (f < 0)
-            errx(1, "Cannot make temp %s", tmp[side][layer]);
+            status("*Cannot make PNG tmp file");
          close(f);
          char id[3] = { layertag[layer], '1' + side };
          if (!(pid[side][layer] = fork()))
@@ -206,11 +219,11 @@ int main(int argc, const char *argv[])
             args[a++] = "--export-area-page";
             args[a++] = "--export-id-only";
             if (asprintf(&args[a++], "--export-png=%s", tmp[side][layer]) < 0)
-               errx(1, "malloc");
+               status("*malloc");
             if (asprintf(&args[a++], "--export-dpi=%d", dpi) < 0)
-               errx(1, "malloc");
+               status("*malloc");
             if (asprintf(&args[a++], "--export-id=%s", id) < 0)
-               errx(1, "malloc");
+               status("*malloc");
             args[a++] = tmpsvg;
             args[a++] = NULL;
             if (debug)
@@ -227,10 +240,10 @@ int main(int argc, const char *argv[])
    for (int side = 0; side < sides; side++)
       for (int layer = 0; layer < layers; layer++)
       {
-         int status = 0;
-         waitpid(pid[side][layer], &status, 0);
-         if (!WIFEXITED(status) || WEXITSTATUS(status))
-            errx(1, "inkscape failed");
+         int pstatus = 0;
+         waitpid(pid[side][layer], &pstatus, 0);
+         if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
+            status("*SVG conversion fail");
       }
 
    if (xidserver || img)
@@ -252,14 +265,14 @@ int main(int argc, const char *argv[])
          void add(int layer) {  // base64 uses alloca so make a function, why not
             int f = open(tmp[side][layer], O_RDONLY);
             if (f < 0)
-               err(1, "Cannot open %s", tmp[side][layer]);
+               status("*Cannot open png tmp file");
             struct stat st;
             if (fstat(f, &st) < 0)
-               err(1, "Cannot stat file %s", tmp[side][layer]);
+               status("*Cannot stat png tmp file");
             size_t length = st.st_size;
             void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
             if (addr == MAP_FAILED)
-               err(1, "Cannot map file %s", tmp[side][layer]);
+               status("*Cannot map png tmp file");
             const char *tag[] = { "C", "K", "U" };
             j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
             munmap(addr, length);
@@ -273,18 +286,14 @@ int main(int argc, const char *argv[])
       free(panel);
       if (xidserver)
       {                         // Send
-         if (jsstatus)
-         {
-            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Connect");
-            fflush(stdout);
-         }
+         status("Connecting");
          int psock = -1;
          struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
          struct addrinfo *res = NULL,
              *a;
          int r = getaddrinfo(xidserver, xidport, &base, &res);
          if (r)
-            errx(1, "Cannot get addr info %s", xidserver);
+            status("*Cannot locate to print server");
          for (a = res; a; a = a->ai_next)
          {
             int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
@@ -306,42 +315,41 @@ int main(int argc, const char *argv[])
                printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Not connected");
                fflush(stdout);
             }
-            errx(1, "Not connected to xidserver");
+            status("*Cannot connect to print server");
+         }
+         if (jsstatus)
+         {
+            printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, "Queued");
+            fflush(stdout);
          }
          SSL_library_init();
          SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());    // Negotiates TLS
          if (!ctx)
-            errx(1, "Cannot make ctx");
+            status("*Cannot make ctx");
          if (certfile && SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
-            errx(1, "Cannot load cert file");
+            status("*Cannot load cert file");
          if (keyfile && SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-            errx(1, "Cannot load key file");
+            status("*Cannot load key file");
          SSL *ss = SSL_new(ctx);
          if (!ss)
-            errx(1, "Cannot make TLS");
+            status("*Cannot make TLS");
          if (!SSL_set_fd(ss, psock))
-            errx(1, "Cannot connect socket");
+            status("*Cannot connect socket");
          if (SSL_connect(ss) != 1)
-            errx(1, "Cannot connect to xid server");
+            status("*Cannot connect to xid server");
+         status("Connected");
          char *jin(j_t i) {
             if (debug)
                j_err(j_write_pretty(i, stderr));
             const char *v;
             if ((v = j_get(i, "count")))
                count = atoi(v);
-            if (jsstatus && (v = j_get(i, "status")))
-            {
-               printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
-               fflush(stdout);
-            }
+            if ((v = j_get(i, "status")))
+               status(v);
             if (j_find(i, "error"))
             {
                v = strdup(j_get(i, "error.description"));
-               if (jsstatus)
-               {
-                  printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, v);
-                  fflush(stdout);
-               }
+               status(v);
                return (char *) v;
             }
             if ((v = j_get(i, "dpi")) && atoi(v) != dpi)
