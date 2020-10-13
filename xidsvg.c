@@ -2,8 +2,6 @@
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
 // Expects inkscape tagged print layers (id) C1, K1, U1, C2, K2, U2
 // Top level XML tags handled
-// sides        Number of sides, 1 or 2
-// layers       Number of layers 1 to 3 (colour, black, UK)
 // rows         Number of print pixel rows expected
 // cols         Number of print pixel cols expected
 // dpi          DPI expected
@@ -147,12 +145,6 @@ int main(int argc, const char *argv[])
    xml_t svg = xml_tree_read(stdin);
    if (!svg)
       status("*Cannot load svg");
-   int sides = atoi(xml_get(svg, "@sides") ? : "");
-   if (!sides || sides > 2)
-      status("Not created for print, expects \"sides\"= at top level");
-   int layers = atoi(xml_get(svg, "@layers") ? : "");
-   if (!layers || layers > 3)
-      status("Not created for print, expects \"layerss\"= at top level");
    int v;
    if ((v = atoi(xml_get(svg, "@dpi") ? : "")))
    {
@@ -196,9 +188,22 @@ int main(int argc, const char *argv[])
       const char layertag[] = "CKU";
       char *tmp[2][3] = { };
       pid_t pid[2][3] = { };
-      for (int side = 0; side < sides; side++)
-         for (int layer = 0; layer < layers; layer++)
+      for (int side = 0; side < 2; side++)
+         for (int layer = 0; layer < 3; layer++)
          {
+            xml_t find(xml_t x) {
+               const char *v = xml_get(x, "@id");
+               if (v && v[0] == layertag[layer] && v[1] == '1' + side && !v[2])
+                  return x;
+               xml_t e = NULL,
+                   q;
+               while ((e = xml_element_next(x, e)))
+                  if ((q = find(e)))
+                     return q;
+               return NULL;
+            }
+            if (!find(svg))
+               continue;
             tmp[side][layer] = strdup("/tmp/cardXX-XXXXXX.png");
             tmp[side][layer][9] = layertag[layer];
             tmp[side][layer][10] = '1' + side;
@@ -235,8 +240,8 @@ int main(int argc, const char *argv[])
                err(1, "Failed to run inkscape");
             }
          }
-      for (int side = 0; side < sides; side++)
-         for (int layer = 0; layer < layers; layer++)
+      for (int side = 0; side < 2; side++)
+         for (int layer = 0; layer < 3; layer++)
          {
             int pstatus = 0;
             waitpid(pid[side][layer], &pstatus, 0);
@@ -256,7 +261,7 @@ int main(int argc, const char *argv[])
       }
       j_t p = j_store_array(j, "print");
       unsigned char *panel = malloc(cols * rows);
-      for (int side = 0; side < sides; side++)
+      for (int side = 0; side < 2; side++)
       {
          j_t s = j_append_object(p);
          void add(int layer) {  // base64 uses alloca so make a function, why not
@@ -275,7 +280,7 @@ int main(int argc, const char *argv[])
             munmap(addr, length);
             close(f);
          }
-         for (int layer = 0; layer < layers; layer++)
+         for (int layer = 0; layer < 3; layer++)
             add(layer);
       }
       free(panel);
@@ -283,8 +288,8 @@ int main(int argc, const char *argv[])
       if (!debug)
          unlink(tmpsvg);
       free(tmpsvg);
-      for (int side = 0; side < sides; side++)
-         for (int layer = 0; layer < layers; layer++)
+      for (int side = 0; side < 2; side++)
+         for (int layer = 0; layer < 3; layer++)
          {
             if (!debug)
                unlink(tmp[side][layer]);
@@ -398,7 +403,7 @@ int main(int argc, const char *argv[])
             j_t j = compose();
             j_err(j_write_func(j, ss_write_func, ss));
             j_delete(&j);
-	    status("Printing");
+            status("Printing");
          }
          return NULL;
       }
@@ -408,10 +413,11 @@ int main(int argc, const char *argv[])
       close(psock);
       if (er && *er)
       {
-	      status(er);
+         status(er);
          errx(1, "Failed %s", er);
       }
-      if(!count)status("Nothing printed");
+      if (!count)
+         status("Nothing printed");
    }
    return count ? 0 : 1;
 }
