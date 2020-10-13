@@ -242,12 +242,13 @@ int main(int argc, const char *argv[])
          }
       for (int side = 0; side < 2; side++)
          for (int layer = 0; layer < 3; layer++)
-         {
-            int pstatus = 0;
-            waitpid(pid[side][layer], &pstatus, 0);
-            if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
-               status("*SVG conversion fail");
-         }
+            if (tmp[side][layer])
+            {
+               int pstatus = 0;
+               waitpid(pid[side][layer], &pstatus, 0);
+               if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
+                  status("*SVG conversion fail");
+            }
       j_t j = j_create();
       char *mag1 = xml_get(svg, "@track1");
       char *mag2 = xml_get(svg, "@track2");
