@@ -282,7 +282,8 @@ int main(int argc, const char *argv[])
             close(f);
          }
          for (int layer = 0; layer < 3; layer++)
-            add(layer);
+            if (tmp[side][layer])
+               add(layer);
       }
       free(panel);
       // Cleanup
