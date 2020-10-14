@@ -22,6 +22,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <netdb.h>
+#include <libusb-1.0/libusb.h>
 #include <err.h>
 #include <ajl.h>
 #include <png.h>
@@ -121,6 +122,9 @@ const char *certfile = NULL;
 
 // Current connectionns
 SSL *ss;                        // SSL client connection
+libusb_device_handle *usbhandle = NULL;
+const char usbmanufacturer[] = "G-Printec, Inc.";
+const char usbproduct[] = "Card Printer";
 int psock = -1;                 // Connected printer (ethernet)
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
@@ -168,9 +172,40 @@ const char *printer_connect(void)
    queue = 0;
    error = NULL;
    status = "Connecting";
-   // TODO USB?
    seq = 0x99999999;
    txcmd = rxcmd = rxerr = 0;
+   if (!printhost)
+   {
+      if (usbhandle)
+         return error = "Printer already connected";
+      if (libusb_init(NULL) < 0)
+         return error = "USB init fail";
+      libusb_device **devs;
+      ssize_t cnt = libusb_get_device_list(NULL, &devs);
+      if (cnt < 0)
+         return error = "USB failed";
+      for (int i = 0; i < cnt; i++)
+      {
+         struct libusb_device_descriptor desc;
+         if (libusb_get_device_descriptor(devs[i], &desc) < 0)
+            continue;
+         unsigned char string[256];
+         libusb_open(devs[i], &usbhandle);
+         if (!usbhandle)
+            continue;
+         if (desc.iManufacturer && libusb_get_string_descriptor_ascii(usbhandle, desc.iManufacturer, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbmanufacturer) &&
+             desc.iProduct && libusb_get_string_descriptor_ascii(usbhandle, desc.iProduct, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbproduct))
+            break;
+         libusb_close(usbhandle);
+         usbhandle = NULL;
+      }
+      if (!usbhandle)
+      {
+         libusb_exit(NULL);
+         return error = "USB Printer not found";
+      }
+      return NULL;
+   }
    if (psock >= 0)
       return error = "Printer already connected";
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
@@ -200,8 +235,16 @@ const char *printer_connect(void)
 
 const char *printer_disconnect(void)
 {                               // Disconnect from printer
+   if (!printhost)
+   {
+      if (!usbhandle)
+         return "Not connected";        // Not connected, that is OK
+      libusb_exit(NULL);
+      usbhandle = NULL;
+      return NULL;
+   }
    if (psock < 0)
-      return NULL;              // Not connected, that is OK
+      return "Not connected";   // Not connected, that is OK
    close(psock);
    psock = -1;
    return NULL;
@@ -211,7 +254,7 @@ const char *printer_tx(void)
 {                               // Raw printer send
    if (error)
       return error;
-   if (psock < 0)
+   if (!usbhandle && psock < 0)
       return "Printer not connected";
    if (buflen < 16)
       return "Bad tx";
@@ -236,7 +279,13 @@ const char *printer_tx(void)
    n = 0;
    while (n < buflen)
    {
-      ssize_t l = write(psock, buf + n, buflen - n);
+      ssize_t l = 0;
+      if (psock < 0)
+         libusb_bulk_transfer(usbhandle, 0x81, buf + buflen, n - buflen, &l, 60000);
+      else
+         l = write(psock, buf + n, buflen - n);
+      if (usbhandle)
+         warnx("tx=%d", (int) l);
       if (l <= 0)
       {
          warn("Tx %d", (int) l);
@@ -253,16 +302,23 @@ const char *printer_rx(void)
       queue--;
    if (error)
       return error;
-   if (psock < 0)
-      return "Printer not connected";
-   rxcmd = 0;
+   if (!usbhandle && psock < 0)
+      rxcmd = 0;
    buflen = 0;
    unsigned int n = 8;
+   if (usbhandle)
+      n = 512;                  // TODO DEBUG
    while (buflen < n)
    {
       if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
          errx(1, "malloc");
-      ssize_t l = read(psock, buf + buflen, n - buflen);
+      ssize_t l = 0;
+      if (psock < 0)
+         libusb_bulk_transfer(usbhandle, 0x02, buf + buflen, n - buflen, &l, 60000);
+      else
+         l = read(psock, buf + buflen, n - buflen);
+      if (usbhandle)
+         warnx("rx=%d", (int) l);
       if (!l && !buflen)
          return "Printer disconnected link";
       if (l <= 0)
@@ -971,7 +1027,7 @@ int main(int argc, const char *argv[])
       if ((c = poptGetNextOpt(optCon)) < -1)
          errx(1, "%s: %s\n", poptBadOption(optCon, POPT_BADOPTION_NOALIAS), poptStrerror(c));
 
-      if (poptPeekArg(optCon) || !printhost || !keyfile || !certfile)
+      if (poptPeekArg(optCon) || !keyfile || !certfile)
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
