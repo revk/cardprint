@@ -56,7 +56,7 @@ int dpi = -1;
 #endif
 
 int debug = 0;
-int img = 0;
+int preview = 0;
 int loaded = 0;
 int retain = 0;
 int uvsingle = 0;
@@ -93,7 +93,7 @@ int main(int argc, const char *argv[])
          { "uv-single", 0, POPT_ARG_NONE, &uvsingle, 0, "UV on same retransfer" },
          { "copies", 'N', POPT_ARGFLAG_SHOW_DEFAULT | POPT_ARG_INT, &copies, 0, "Copies", "N" },
          { "js-status", 'j', POPT_ARG_STRING, &jsstatus, 0, "Javascript output", "html-ID" },
-         { "img", 'p', POPT_ARG_NONE, &img, 0, "Make image preview" },
+         { "preview", 'p', POPT_ARG_NONE, &preview, 0, "Make image preview" },
 #ifndef	DPI
          { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "dpi" },
 #endif
@@ -120,7 +120,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (!xidserver && !img))
+      if (poptPeekArg(optCon) || (!xidserver && !preview))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -301,12 +301,13 @@ int main(int argc, const char *argv[])
       return j;
    }
 
-   if (img)
+   if (preview)
    {
       j_t j = compose();
       j_t p = j_find(j, "print");
-      for (j_t l = j_first(p); l; l = j_next(l))
-         printf("<img border=1 src=\"%s\">\n", j_val(l));
+      for (j_t s = j_first(p); s; s = j_next(s))
+         for (j_t l = j_first(s); l; l = j_next(l))
+            printf("<img border=1 src=\"%s\">\n", j_val(l));
       j_delete(&j);
    }
 
