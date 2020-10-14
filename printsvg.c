@@ -164,12 +164,27 @@ int main(int argc, const char *argv[])
    }
    const char layertag[] = "CKU";
    char *tmp[2][3] = { };
-   int side;
-   for (side = 0; side < sides; side++)
-   {
-      int layer;
-      for (layer = 0; layer < layers; layer++)
+   for (int side = 0; side < 2; side++)
+      for (int layer = 0; layer < 3; layer++)
       {
+         xml_t find(xml_t x) {
+            const char *v = xml_get(x, "@id");
+            if (v && v[0] == layertag[layer] && v[1] == '1' + side && !v[2])
+               return x;
+            xml_t e = NULL,
+                q;
+            while ((e = xml_element_next(x, e)))
+               if ((q = find(e)))
+                  return q;
+            return NULL;
+         }
+         if (!find(svg))
+         {                      // Blank
+            for (int y = 0; y < rows; y++)
+               for (int x = 0; x < cols; x++)
+                  fputc(0, rgbfile);
+            continue;
+         }
          tmp[side][layer] = strdup("/tmp/cardXX-XXXXXX.png");
          tmp[side][layer][9] = layertag[layer];
          tmp[side][layer][10] = '1' + side;
@@ -295,15 +310,6 @@ int main(int argc, const char *argv[])
             free(tmpraw);
          }
       }
-      for (; layer < 3; layer++)
-      {                         // Blank layers
-         int x,
-          y;
-         for (y = 0; y < rows; y++)
-            for (x = 0; x < cols; x++)
-               fputc(0, rgbfile);
-      }
-   }
    fclose(rgbfile);
 
    if (png)
@@ -332,12 +338,12 @@ int main(int argc, const char *argv[])
          if (asprintf(&args[a++], "%dx%d", cols, rows) < 0)
             errx(1, "malloc");
          args[a++] = "-tile";
-         if (asprintf(&args[a++], "%dx%d", sides, layers) < 0)
+         if (asprintf(&args[a++], "%dx%d", 2, 3) < 0)
             errx(1, "malloc");
-         int layer;
-         for (layer = 0; layer < layers; layer++)
-            for (side = 0; side < sides; side++)
-               args[a++] = tmp[side][layer];
+         for (int layer = 0; layer < 3; layer++)
+            for (int side = 0; side < 2; side++)
+               if (tmp[side][layer])
+                  args[a++] = tmp[side][layer];
          args[a++] = tmppng;
          args[a++] = NULL;
          if (debug)
@@ -438,16 +444,14 @@ int main(int argc, const char *argv[])
    if (!debug)
       unlink(tmprgb);
    free(tmprgb);
-   for (side = 0; side < sides; side++)
-   {
-      int layer;
-      for (layer = 0; layer < layers; layer++)
-      {
-         if (!debug)
-            unlink(tmp[side][layer]);
-         free(tmp[side][layer]);
-      }
-   }
+   for (int side = 0; side < 2; side++)
+      for (int layer = 0; layer < 3; layer++)
+         if (tmp[side][layer])
+         {
+            if (!debug)
+               unlink(tmp[side][layer]);
+            free(tmp[side][layer]);
+         }
    xml_tree_delete(svg);
 
    return 0;
