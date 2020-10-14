@@ -950,6 +950,7 @@ int main(int argc, const char *argv[])
    const char *bindhost = NULL;
    const char *port = "7810";
    int background = 0;
+   int lqueue = 0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -959,6 +960,7 @@ int main(int argc, const char *argv[])
          { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port", "port" },
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
+         { "listen", 'q', POPT_ARG_INT, &lqueue, 0, "Listen queue", "N" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
@@ -1015,7 +1017,7 @@ int main(int argc, const char *argv[])
          er = "Failed to bind to address";
          continue;
       }
-      if (listen(l, 10))
+      if (listen(l, lqueue))
       {
          close(l);
          er = "Could not listen on port";
