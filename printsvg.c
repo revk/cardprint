@@ -3,7 +3,7 @@
 //      DEPRECATED      Replaced by xidsvg
 //
 // (c) 2018 Adrian Kennard Andrews & Arnold Ltd
-// Expects print layers (id) C1, K1, U1, C2, K2, U2, and @layers and @sides defined, etc
+// Expects print layers (id) C1, K1, U1, C2, K2, U2
 // Expects to be convertible at 300dpi to an image covering card (ideally at least 1024x648 to 1036x664), but centres if smaller/larger
 // At present this prints to matica, but the idea is that if we make other drivers this will have options to use them instead
 
@@ -131,17 +131,9 @@ int main(int argc, const char *argv[])
    xml_t svg = xml_tree_read(stdin);
    if (!svg)
       errx(1, "Cannot load SVG");
-   int sides = atoi(xml_get(svg, "@sides") ? : "");
-   if (!sides || sides > 2)
-      errx(1, "Needs to be created for print, with @sides at top level");
-   int layers = atoi(xml_get(svg, "@layers") ? : "");
-   if (!layers || layers > 3)
-      errx(1, "Needs to be created for print, with @layers at top level");
    char *mag1 = xml_get(svg, "@track1");
    char *mag2 = xml_get(svg, "@track2");
    char *mag3 = xml_get(svg, "@track3");
-   if (debug)
-      fprintf(stderr, "%d side%s, %d layer%s\n", sides, sides == 1 ? "" : "s", layers, layers == 1 ? "" : "s");
 
    // Convert each layer to png then rgb
    char *tmprgb = strdup("/tmp/cardXXXXXX.rgb");
