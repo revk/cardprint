@@ -222,6 +222,10 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
 const char *xid_connect(const char *xidserver, const char *xidport, const char *keyfile, const char *certfile, j_stream_t * jin)
 {                               // Send to xidserver
    status("Connecting");
+   if (!xidserver)
+      return "No server specified";
+   if (!xidport)
+      xidport = "7810";
    int psock = -1;
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
