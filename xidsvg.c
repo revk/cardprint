@@ -195,9 +195,12 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
          void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
          if (addr == MAP_FAILED)
             status("*Cannot map png tmp file");
-         const char *tag[] = { "C", "K", "U" };
-         j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
-         munmap(addr, length);
+         else
+         {
+            const char *tag[] = { "C", "K", "U" };
+            j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
+            munmap(addr, length);
+         }
          close(f);
       }
       for (int layer = 0; layer < 3; layer++)
