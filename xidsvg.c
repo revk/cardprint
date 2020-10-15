@@ -75,6 +75,7 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
    return SSL_read(arg, buf, len);
 }
 
+#ifndef LIB
 int main(int argc, const char *argv[])
 {
    int count = 0;
@@ -424,3 +425,4 @@ int main(int argc, const char *argv[])
    }
    return count ? 0 : 1;
 }
+#endif
