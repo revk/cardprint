@@ -544,8 +544,9 @@ const char *client_tx(j_t j)
    return NULL;
 }
 
-char *client_rx(j_t j)
+char *client_rx(j_t j, void *arg)
 {                               // Process received message
+   arg = arg;
    j_t print = j_find(j, "print");
    if (print)
    {
@@ -992,7 +993,7 @@ char *job(const char *from)
    // Handle messages both ways
    char *ers = NULL;
    if (!error)
-      ers = j_stream_func(ss_read_func, ss, client_rx);
+      ers = j_stream_func(ss_read_func, ss, client_rx, NULL);
    if (!ers && error)
       ers = strdup(error);
    printer_disconnect();
