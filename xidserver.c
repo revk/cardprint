@@ -28,11 +28,12 @@
 #include <ajl.h>
 #include <png.h>
 
-// As this is single threader operation, on job at a time, we are using globals :-)
+// Loads of globals - single job at a time
+
+#define freez(n) do{if(n){free((void*)(n));n=NULL;}}while(0)    // Free in situ if needed and null
 
 j_t j_new(void);
 const char *client_tx(j_t j);
-
 const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
 
 #define	POS_UNKNOWN	-2
@@ -157,6 +158,49 @@ const char *readeric = NULL,
 SCARDHANDLE card;
 BYTE atr[MAX_ATR_SIZE];
 DWORD atrlen;
+
+void card_check(void)
+{                               // list the readers
+   long res;
+   DWORD temp;
+   char *r,
+   *e;
+   freez(readeric);
+   freez(readerrfid);
+   if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
+   {
+      warnx("Cannot get PCSC context, is pcscd running?");
+      return;
+   }
+   if ((res = SCardListReaders(cardctx, NULL, NULL, &temp)) != SCARD_S_SUCCESS)
+   {
+      warnx("Cannot get reader list (%s)", pcsc_stringify_error(res));
+      return;
+   }
+   if (!(r = malloc(temp)))
+   {
+      warnx("Cannot allocated %d bytes for reader list", (int) temp);
+      return;
+   }
+   if ((res = SCardListReaders(cardctx, NULL, r, &temp)) != SCARD_S_SUCCESS)
+   {
+      warnx("Cannot list readers (%s)", pcsc_stringify_error(res));
+      return;
+   }
+   e = r + temp;
+   while (*r && r < e)          // && !error)
+   {
+      if (!readeric && strstr(r, "HID Global OMNIKEY 3x21 Smart Card Reader"))
+         readeric = strdup(r);
+      else if (!readerrfid && strstr(r, "OMNIKEY AG CardMan 5121"))
+         readerrfid = strdup(r);
+      else
+         warnx("Additional card reader %s ignored", r);
+      r += strlen(r) + 1;
+   }
+   free(r);
+}
+
 const char *card_connect(const char *reader)
 {
    int res;
@@ -1056,6 +1100,7 @@ char *client_rx(j_t j, void *arg)
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
    // Connect to printer, get answer back, report to client
+   card_check();
    count = 0;
    printer_connect();
    printer_rx_check();
@@ -1121,6 +1166,8 @@ char *job(const char *from)
    j_store_int(j, "rows", rows);
    j_store_int(j, "cols", cols);
    j_store_int(j, "dpi", dpi);
+   j_store_boolean(j, "ic", readeric);
+   j_store_boolean(j, "rfid", readerrfid);
    client_tx(j);
    check_status();
    check_position();
@@ -1174,33 +1221,6 @@ int main(int argc, const char *argv[])
    }
    if (background)
       daemon(0, debug);
-
-   {                            // list the readers
-      long res;
-      DWORD temp;
-      char *r,
-      *e;
-      if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
-         errx(1, "Cannot get PCSC context, is pcscd running?");
-      if ((res = SCardListReaders(cardctx, NULL, NULL, &temp)) != SCARD_S_SUCCESS)
-         errx(1, "Cannot get reader list (%s)", pcsc_stringify_error(res));
-      if (!(r = malloc(temp)))
-         errx(1, "Cannot allocated %d bytes for reader list", (int) temp);
-      if ((res = SCardListReaders(cardctx, NULL, r, &temp)) != SCARD_S_SUCCESS)
-         errx(1, "Cannot list readers (%s)", pcsc_stringify_error(res));
-      e = r + temp;
-      while (*r && r < e)       // && !error)
-      {
-         if (!readeric && strstr(r, "HID Global OMNIKEY 3x21 Smart Card Reader"))
-            readeric = r;
-         else if (!readerrfid && strstr(r, "OMNIKEY AG CardMan 5121"))
-            readerrfid = r;
-         else
-            warnx("Additional card reader %s ignored", r);
-         r += strlen(r) + 1;
-      }
-      // not freed as reader is pointer into r.
-   }
 
    // Bind for connection
    int l = -1;
