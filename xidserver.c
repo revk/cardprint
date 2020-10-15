@@ -164,6 +164,7 @@ const char *card_connect(const char *reader)
       warnx("Connecting to %s", reader);
    if (!reader)
       return "No IC reader found";
+   // Yes, we have context, but seems to need it again!
    if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
       return "Cannot get PCSC context, is pcscd running?";
    SCARD_READERSTATE status = { };
