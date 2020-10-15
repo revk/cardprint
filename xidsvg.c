@@ -184,28 +184,32 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    for (int side = 0; side < 2; side++)
    {
       j_t s = j_append_object(p);
-      void add(int layer) {     // base64 uses alloca so make a function, why not
-         int f = open(tmp[side][layer], O_RDONLY);
-         if (f < 0)
-            status("*Cannot open png tmp file");
-         struct stat st;
-         if (fstat(f, &st) < 0)
-            status("*Cannot stat png tmp file");
-         size_t length = st.st_size;
-         void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
-         if (addr == MAP_FAILED)
-            status("*Cannot map png tmp file");
-         else
-         {
-            const char *tag[] = { "C", "K", "U" };
-            j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_base64(length, addr));
-            munmap(addr, length);
-         }
-         close(f);
-      }
       for (int layer = 0; layer < 3; layer++)
          if (tmp[side][layer])
-            add(layer);
+         {
+            int f = open(tmp[side][layer], O_RDONLY);
+            if (f < 0)
+               status("*Cannot open png tmp file");
+            struct stat st;
+            if (fstat(f, &st) < 0)
+               status("*Cannot stat png tmp file");
+            size_t length = st.st_size;
+            void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
+            if (addr == MAP_FAILED)
+               status("*Cannot map png tmp file");
+            else
+            {
+               const char *tag[] = { "C", "K", "U" };
+               size_t len = (length + 5) / 6 * 8 + 3;
+               char *b64 = malloc(len);
+               if (!b64)
+                  errx(1, "malloc");
+               j_store_stringf(s, tag[layer], "data:image/png;base64,%s", j_baseN(length, addr, len, b64, JBASE64, 6));
+               free(b64);
+               munmap(addr, length);
+            }
+            close(f);
+         }
    }
    free(panel);
    // Cleanup
@@ -367,14 +371,11 @@ int main(int argc, const char *argv[])
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
-
       optCon = poptGetContext(NULL, argc, argv, optionsTable, 0);
       poptSetOtherOptionHelp(optCon, "[in] [out]");
-
       int c;
       if ((c = poptGetNextOpt(optCon)) < -1)
          errx(1, "%s: %s\n", poptBadOption(optCon, POPT_BADOPTION_NOALIAS), poptStrerror(c));
-
       if (!input && poptPeekArg(optCon))
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
