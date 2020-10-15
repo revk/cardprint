@@ -352,6 +352,7 @@ unsigned char *loadfile(const char *filename, int width, int height, int bpp, in
 int main(int argc, const char *argv[])
 {
    int c;
+   int svg = 0;
    const char *c1file = NULL;
    const char *k1file = NULL;
    const char *u1file = NULL;
@@ -384,6 +385,7 @@ int main(int argc, const char *argv[])
       { "fast", 0, POPT_ARG_NONE, &fast, 0, "Faster preview" },
       { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "N" },
       { "keep-files", 0, POPT_ARGFLAG_DOC_HIDDEN | POPT_ARG_NONE, &keepfiles, 0, "Keep temp files" },
+      { "svg", 0, POPT_ARG_NONE, &svg, 0, "Make SVG for xidsvg style output" }, // TODO
       { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
       POPT_AUTOHELP { }
    };
