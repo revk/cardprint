@@ -222,7 +222,6 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
             unlink(tmp[side][layer]);
             free(tmp[side][layer]);
          }
-   xml_tree_delete(svg);
    return j;
 }
 
@@ -441,6 +440,8 @@ int main(int argc, const char *argv[])
       if (!count)
          status("Nothing printed");
    }
+
+   xml_tree_delete(svg);
    return count ? 0 : 1;
 }
 #endif
