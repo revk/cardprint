@@ -491,7 +491,7 @@ const char *moveto(int newposn)
    if (error || posn == newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
-      printer_queue_cmd(0x0A024000);    // Disengage contact station
+      printer_cmd(0x0A024000);    // Disengage contact station
    if (posn < 0)
    {                            // not in machine
       if (newposn == POS_EJECT)
@@ -517,7 +517,7 @@ const char *moveto(int newposn)
    }
    posn = newposn;
    if (posn == POS_IC)
-      printer_queue_cmd(0x0A020000);    // Engage contacts
+      printer_cmd(0x0A020000);    // Engage contacts
    if (posn == POS_EJECT || posn == POS_REJECT)
       posn = POS_OUT;           // Out of machine
    return error;
