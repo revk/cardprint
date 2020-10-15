@@ -333,7 +333,6 @@ char *jin(j_t i, void *arg)
 
 int main(int argc, const char *argv[])
 {
-   int count = 0;
    const char *certfile = NULL;
    const char *keyfile = NULL;
    {                            // POPT
