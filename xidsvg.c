@@ -35,7 +35,6 @@
 #ifndef LIB
 #define xquoted(x)      #x
 #define quoted(x)       xquoted(x)
-const char xidport[] = "7810";
 #ifdef	XIDSERVER
 char *xidserver = quoted(XIDSERVER);
 #else
@@ -70,12 +69,12 @@ int count = 0;
 xml_t svg = NULL;
 #endif
 
-ssize_t ss_write_func(void *arg, void *buf, size_t len)
+ssize_t xid_write_func(void *arg, void *buf, size_t len)
 {
    return SSL_write(arg, buf, len);
 }
 
-ssize_t ss_read_func(void *arg, void *buf, size_t len)
+ssize_t xid_read_func(void *arg, void *buf, size_t len)
 {
    return SSL_read(arg, buf, len);
 }
@@ -219,14 +218,16 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    return j;
 }
 
-const char *xid_connect(const char *xidserver, const char *xidport, const char *keyfile, const char *certfile, j_stream_t * jin)
+const char *xid_connect(const char *xidserver, const char *keyfile, const char *certfile, j_stream_t * jin)
 {                               // Send to xidserver
    status("Connecting");
+   if (!xidserver)
+      return "No server specified";
    int psock = -1;
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
        *a;
-   int r = getaddrinfo(xidserver, xidport, &base, &res);
+   int r = getaddrinfo(xidserver, "7810", &base, &res);
    if (r)
       status("*Cannot locate to print server");
    for (a = res; a; a = a->ai_next)
@@ -265,7 +266,7 @@ const char *xid_connect(const char *xidserver, const char *xidport, const char *
    if (SSL_connect(ss) != 1)
       status("*Cannot connect to xid server");
    status("Connected");
-   char *er = j_stream_func(ss_read_func, ss, jin, ss);
+   char *er = j_stream_func(xid_read_func, ss, jin, ss);
    SSL_shutdown(ss);
    SSL_free(ss);
    close(psock);
@@ -324,7 +325,7 @@ char *jin(j_t i, void *arg)
    if (j_find(i, "id"))
    {                            // Send print
       j_t j = xid_compose(svg, dpi, rows, cols);
-      j_err(j_write_func(j, ss_write_func, arg));
+      j_err(j_write_func(j, xid_write_func, arg));
       j_delete(&j);
       status("Printing");
    }
@@ -426,7 +427,7 @@ int main(int argc, const char *argv[])
 
    if (xidserver)
    {
-      const char *er = xid_connect(xidserver, xidport, keyfile, certfile, jin);
+      const char *er = xid_connect(xidserver, keyfile, certfile, jin);
       if (er && *er)
       {
          status(er);
