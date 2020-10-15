@@ -22,6 +22,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <netdb.h>
+#include <winscard.h>
 #include <libusb-1.0/libusb.h>
 #include <err.h>
 #include <ajl.h>
@@ -441,7 +442,7 @@ const char *printer_start_cmd(unsigned int cmd)
    // 1: Check status
    // 2: Check position
    // 3: Initialise
-   // 4: Load Move (third byte 80 for load, 10 for flip, forth is position)
+   // 4: Load Move (third byte 80 for load maybe, 10 for flip, forth is position)
    // 5: Move (forth is position)
    // 6: Print to transfer film (forth byte is layers to transfer)
    // 7: Transfer to card (third/forth same as move card, done after transfer)
@@ -496,6 +497,8 @@ const char *moveto(int newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
       printer_cmd(0x0A024000);  // Disengage contact station
+   else if (posn == POS_RFID)
+      printer_cmd(0x0A025000);  // Disengage contact station
    if (posn < 0)
    {                            // not in machine
       if (newposn == POS_EJECT)
@@ -505,7 +508,8 @@ const char *moveto(int newposn)
       else
       {
          status = "Load card";
-         printer_queue_cmd(0x04028000 + newposn);       // Load
+         //printer_queue_cmd(0x04028000 + newposn);       // Load
+         printer_queue_cmd(0x04020000 + newposn);       // Load
       }
    } else if (newposn >= 0)
    {
@@ -522,6 +526,8 @@ const char *moveto(int newposn)
    posn = newposn;
    if (posn == POS_IC)
       printer_cmd(0x0A020000);  // Engage contacts
+   else if (posn == POS_RFID)
+      printer_cmd(0x0A021000);  // Engage contacts
    if (posn == POS_EJECT || posn == POS_REJECT)
       posn = POS_OUT;           // Out of machine
    return error;
@@ -982,11 +988,6 @@ char *job(const char *from)
       }
       printer_tx_check();
    }
-   check_status();
-   check_position();
-   if (posn >= 0)
-      moveto(POS_REJECT);
-   check_position();
    j_t j = j_new();
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
@@ -994,6 +995,12 @@ char *job(const char *from)
    j_store_int(j, "cols", cols);
    j_store_int(j, "dpi", dpi);
    client_tx(j);
+   check_status();
+   check_position();
+   if (posn >= 0)
+      moveto(POS_REJECT);
+   check_position();
+   client_tx(j_new());
    // Handle messages both ways
    char *ers = NULL;
    if (!error)

@@ -36,4 +36,5 @@ cardart: cardart.c
 	cc -O -o $@ $< ${OPTS} -lpopt
 
 xidserver: xidserver.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0
+	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
+
