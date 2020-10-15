@@ -69,12 +69,12 @@ int count = 0;
 xml_t svg = NULL;
 #endif
 
-ssize_t ss_write_func(void *arg, void *buf, size_t len)
+ssize_t xid_write_func(void *arg, void *buf, size_t len)
 {
    return SSL_write(arg, buf, len);
 }
 
-ssize_t ss_read_func(void *arg, void *buf, size_t len)
+ssize_t xid_read_func(void *arg, void *buf, size_t len)
 {
    return SSL_read(arg, buf, len);
 }
@@ -266,7 +266,7 @@ const char *xid_connect(const char *xidserver, const char *keyfile, const char *
    if (SSL_connect(ss) != 1)
       status("*Cannot connect to xid server");
    status("Connected");
-   char *er = j_stream_func(ss_read_func, ss, jin, ss);
+   char *er = j_stream_func(xid_read_func, ss, jin, ss);
    SSL_shutdown(ss);
    SSL_free(ss);
    close(psock);
@@ -325,7 +325,7 @@ char *jin(j_t i, void *arg)
    if (j_find(i, "id"))
    {                            // Send print
       j_t j = xid_compose(svg, dpi, rows, cols);
-      j_err(j_write_func(j, ss_write_func, arg));
+      j_err(j_write_func(j, xid_write_func, arg));
       j_delete(&j);
       status("Printing");
    }
