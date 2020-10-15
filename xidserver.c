@@ -30,6 +30,9 @@
 
 // As this is single threader operation, on job at a time, we are using globals :-)
 
+j_t j_new(void);
+const char *client_tx(j_t j);
+
 const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
 
 #define	POS_UNKNOWN	-2
@@ -147,11 +150,98 @@ int dpi = 0,
     rows = 0,
     cols = 0;                   // Size
 
+// Cards
+SCARDCONTEXT cardctx;
+const char *readeric = NULL,
+    *readerrfid = NULL;
+SCARDHANDLE card;
+BYTE atr[MAX_ATR_SIZE];
+DWORD atrlen;
+const char *card_connect(const char *reader)
+{
+   int res;
+   if (debug)
+      warnx("Connecting to %s", reader);
+   if (!reader)
+      return "No IC reader found";
+   if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
+      return "Cannot get PCSC context, is pcscd running?";
+   SCARD_READERSTATE status = { };
+   status.szReader = reader;
+   time_t giveup = time(0) + 10;
+   while ((res = SCardGetStatusChange(cardctx, 1000, &status, 1)) == SCARD_S_SUCCESS && (status.dwEventState & SCARD_STATE_EMPTY) && time(0) < giveup);
+   if (status.dwEventState & SCARD_STATE_EMPTY)
+      return "IC card not responding";
+   DWORD proto;
+   if ((res = SCardConnect(cardctx, reader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card, &proto)) != SCARD_S_SUCCESS)
+   {
+      warnx("Cannot connect to %s (%s)", reader, pcsc_stringify_error(res));
+      return "IC card failed to connect";
+   }
+   atrlen = sizeof(atr);
+   DWORD state;
+   DWORD temp;
+   if ((res = SCardStatus(card, 0, &temp, &state, &proto, atr, &atrlen)) != SCARD_S_SUCCESS)
+      return "Cannot get card status";
+   j_t j = j_new();
+   j_store_string(j, "atr", j_base16(atrlen, atr));
+   client_tx(j);
+   return NULL;
+}
+
+const char *card_disconnect(void)
+{
+   if (debug)
+      warnx("Card disconnect");
+   int res;
+   if ((res = SCardDisconnect(card, SCARD_UNPOWER_CARD)) != SCARD_S_SUCCESS)
+      return "Cannot end transaction";
+   return NULL;
+}
+
+void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char *rx)
+{
+   if (error)
+      return;
+   SCARD_IO_REQUEST recvpci;
+   if (debug)
+      fprintf(stderr, "Card Tx: %s\n", j_base16(txlen, tx));
+   int res;
+   if ((res = SCardTransmit(card, SCARD_PCI_T0, tx, txlen, &recvpci, rx, rxlenp)) != SCARD_S_SUCCESS)
+   {
+      warnx("Failed to send command (%s)", pcsc_stringify_error(res));
+      *rxlenp = 0;
+   }
+   if (debug)
+      fprintf(stderr, "Card Rx: %s\n", j_base16(*rxlenp, rx));
+   if (*rxlenp < 2)
+      warnx("Unexpected response");
+   if (buf[0] == 0x93)
+      warnx("Busy error %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x62 || buf[0] == 0x63)
+      warnx("Warning %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x64 || buf[0] == 0x65)
+      warnx("Execution error %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x67 || buf[0] == 0x6C)
+      warnx("Wrong length %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x68)
+      warnx("Function in CLA not supported %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x69)
+      warnx("Command not allowed %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x6A || buf[0] == 0x6B)
+      warnx("Wrong parameter %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x6D)
+      warnx("Invalid INS %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x6E)
+      warnx("Class not supported %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x6F)
+      warnx("No diagnosis - error %02X %02X", buf[0], buf[1]);
+   if (buf[0] == 0x68)
+      warnx("CLA error %02X %02X", buf[0], buf[1]);
+}
+
 // Printer specific settings
 unsigned char xid8600 = 0;      // Is an XID8600
-
-const char *client_tx(j_t j);
-
 j_t j_new(void)
 {
    j_t j = j_create();
@@ -353,7 +443,6 @@ const char *printer_rx(void)
 }
 
 const char *printer_start_cmd(unsigned int cmd);
-
 const char *printer_rx_check(void)
 {
    if (error)
@@ -496,9 +585,14 @@ const char *moveto(int newposn)
    if (error || posn == newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
+   {
+      card_disconnect();
       printer_cmd(0x0A024000);  // Disengage contact station
-   else if (posn == POS_RFID)
+   } else if (posn == POS_RFID)
+   {
+      card_disconnect();
       printer_cmd(0x0A025000);  // Disengage contact station
+   }
    if (posn < 0)
    {                            // not in machine
       if (newposn == POS_EJECT)
@@ -525,9 +619,16 @@ const char *moveto(int newposn)
    }
    posn = newposn;
    if (posn == POS_IC)
+   {
       printer_cmd(0x0A020000);  // Engage contacts
-   else if (posn == POS_RFID)
+      if ((error = card_connect(readeric)))
+         return error;
+   } else if (posn == POS_RFID)
+   {
       printer_cmd(0x0A021000);  // Engage contacts
+      if ((error = card_connect(readerrfid)))
+         return error;
+   }
    if (posn == POS_EJECT || posn == POS_REJECT)
       posn = POS_OUT;           // Out of machine
    return error;
@@ -661,9 +762,34 @@ char *client_rx(j_t j, void *arg)
    if ((cmd = j_find(j, "ic")))
    {
       moveto(POS_IC);
-      // TODO
+      if (j_isstring(cmd))
+      {
+         unsigned char *tx = NULL;
+         int txlen = j_base16d(j_val(cmd), &tx);;
+         unsigned char rx[256];
+         DWORD rxlen = sizeof(rx);
+         card_txn(txlen, tx, &rxlen, rx);
+         j_t j = j_new();
+         j_store_string(j, "ic", j_base16(rxlen, rx));
+         client_tx(j);
+      }
    }
    if ((cmd = j_find(j, "rfid")))
+   {
+      moveto(POS_RFID);
+      if (j_isstring(cmd))
+      {
+         unsigned char *tx = NULL;
+         int txlen = j_base16d(j_val(cmd), &tx);;
+         unsigned char rx[256];
+         DWORD rxlen = sizeof(rx);
+         card_txn(txlen, tx, &rxlen, rx);
+         j_t j = j_new();
+         j_store_string(j, "rfid", j_base16(rxlen, rx));
+         client_tx(j);
+      }
+   }
+   if ((cmd = j_find(j, "mifare")))
    {
       moveto(POS_RFID);
       // TODO
@@ -1033,14 +1159,11 @@ int main(int argc, const char *argv[])
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
-
       optCon = poptGetContext(NULL, argc, argv, optionsTable, 0);
       //poptSetOtherOptionHelp (optCon, "");
-
       int c;
       if ((c = poptGetNextOpt(optCon)) < -1)
          errx(1, "%s: %s\n", poptBadOption(optCon, POPT_BADOPTION_NOALIAS), poptStrerror(c));
-
       if (poptPeekArg(optCon) || !keyfile || !certfile)
       {
          poptPrintUsage(optCon, stderr, 0);
@@ -1050,6 +1173,33 @@ int main(int argc, const char *argv[])
    }
    if (background)
       daemon(0, debug);
+
+   {                            // list the readers
+      long res;
+      DWORD temp;
+      char *r,
+      *e;
+      if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
+         errx(1, "Cannot get PCSC context, is pcscd running?");
+      if ((res = SCardListReaders(cardctx, NULL, NULL, &temp)) != SCARD_S_SUCCESS)
+         errx(1, "Cannot get reader list (%s)", pcsc_stringify_error(res));
+      if (!(r = malloc(temp)))
+         errx(1, "Cannot allocated %d bytes for reader list", (int) temp);
+      if ((res = SCardListReaders(cardctx, NULL, r, &temp)) != SCARD_S_SUCCESS)
+         errx(1, "Cannot list readers (%s)", pcsc_stringify_error(res));
+      e = r + temp;
+      while (*r && r < e)       // && !error)
+      {
+         if (!readeric && strstr(r, "HID Global OMNIKEY 3x21 Smart Card Reader"))
+            readeric = r;
+         else if (!readerrfid && strstr(r, "OMNIKEY AG CardMan 5121"))
+            readerrfid = r;
+         else
+            warnx("Additional card reader %s ignored", r);
+         r += strlen(r) + 1;
+      }
+      // not freed as reader is pointer into r.
+   }
 
    // Bind for connection
    int l = -1;
@@ -1098,12 +1248,10 @@ int main(int argc, const char *argv[])
    freeaddrinfo(res);
    if (er)
       errx(1, "Failed: %s", er);
-
    SSL_library_init();
    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());  // Negotiates TLS
    if (!ctx)
       errx(1, "Cannot create SSL CTX");
-
    // Handle connections
    while (1)
    {
@@ -1179,6 +1327,11 @@ int main(int argc, const char *argv[])
       if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
          warnx("Job failed");
       close(s);
+   }
+   {
+      int res;
+      if ((res = SCardReleaseContext(cardctx)) != SCARD_S_SUCCESS)
+         errx(1, "Cant release context (%s)", pcsc_stringify_error(res));
    }
 
    return 0;
