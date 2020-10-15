@@ -279,7 +279,7 @@ const char *printer_tx(void)
    n = 0;
    while (n < buflen)
    {
-      ssize_t l = 0;
+      int l = 0;
       if (psock < 0)
          libusb_bulk_transfer(usbhandle, 0x81, buf + buflen, n - buflen, &l, 60000);
       else
@@ -312,7 +312,7 @@ const char *printer_rx(void)
    {
       if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
          errx(1, "malloc");
-      ssize_t l = 0;
+      int l = 0;
       if (psock < 0)
          libusb_bulk_transfer(usbhandle, 0x02, buf + buflen, n - buflen, &l, 60000);
       else
@@ -619,7 +619,7 @@ char *client_rx(j_t j)
             printer_tx();
             printer_rx();
             if (rxerr)
-               j_append_literal(j, "null");
+               j_append_null(j);
             else
             {
                int p = 20;
