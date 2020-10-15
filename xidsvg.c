@@ -37,9 +37,9 @@
 #define quoted(x)       xquoted(x)
 const char xidport[] = "7810";
 #ifdef	XIDSERVER
-char *xidhost = quoted(XIDSERVER);
+char *xidserver = quoted(XIDSERVER);
 #else
-char *xidhost = NULL;
+char *xidserver = NULL;
 #endif
 #ifdef	PRINTCOLS
 const int cols = PRINTCOLS;
@@ -219,14 +219,14 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    return j;
 }
 
-const char *xid_connect(const char *xidhost, const char *xidport, const char *keyfile, const char *certfile, j_stream_t * jin)
-{                               // Send to xidhost
+const char *xid_connect(const char *xidserver, const char *xidport, const char *keyfile, const char *certfile, j_stream_t * jin)
+{                               // Send to xidserver
    status("Connecting");
    int psock = -1;
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
        *a;
-   int r = getaddrinfo(xidhost, xidport, &base, &res);
+   int r = getaddrinfo(xidserver, xidport, &base, &res);
    if (r)
       status("*Cannot locate to print server");
    for (a = res; a; a = a->ai_next)
@@ -340,7 +340,7 @@ int main(int argc, const char *argv[])
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
 #ifndef	XIDSERVER
-         { "xidhost", 'S', POPT_ARG_STRING, &xidhost, 0, "Send to xidhost", "hostname" },
+         { "xidserver", 'S', POPT_ARG_STRING, &xidserver, 0, "Send to xidserver", "hostname" },
 #endif
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL client key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL client cert file", "filename" },
@@ -376,7 +376,7 @@ int main(int argc, const char *argv[])
          input = poptGetArg(optCon);
       if (!output && poptPeekArg(optCon))
          output = poptGetArg(optCon);
-      if (poptPeekArg(optCon) || (!xidhost && !preview))
+      if (poptPeekArg(optCon) || (!xidserver && !preview))
       {
          poptPrintUsage(optCon, stderr, 0);
          return -1;
@@ -425,9 +425,9 @@ int main(int argc, const char *argv[])
       j_delete(&j);
    }
 
-   if (xidhost)
+   if (xidserver)
    {
-      const char *er = xid_connect(xidhost, xidport, keyfile, certfile, jin);
+      const char *er = xid_connect(xidserver, xidport, keyfile, certfile, jin);
       if (er && *er)
       {
          status(er);
