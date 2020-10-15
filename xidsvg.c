@@ -217,10 +217,11 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    free(tmpsvg);
    for (int side = 0; side < 2; side++)
       for (int layer = 0; layer < 3; layer++)
-      {
-         unlink(tmp[side][layer]);
-         free(tmp[side][layer]);
-      }
+         if (tmp[side][layer])
+         {
+            unlink(tmp[side][layer]);
+            free(tmp[side][layer]);
+         }
    xml_tree_delete(svg);
    return j;
 }
