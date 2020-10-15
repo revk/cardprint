@@ -35,7 +35,6 @@
 #ifndef LIB
 #define xquoted(x)      #x
 #define quoted(x)       xquoted(x)
-const char xidport[] = "7810";
 #ifdef	XIDSERVER
 char *xidserver = quoted(XIDSERVER);
 #else
@@ -219,18 +218,16 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    return j;
 }
 
-const char *xid_connect(const char *xidserver, const char *xidport, const char *keyfile, const char *certfile, j_stream_t * jin)
+const char *xid_connect(const char *xidserver, const char *keyfile, const char *certfile, j_stream_t * jin)
 {                               // Send to xidserver
    status("Connecting");
    if (!xidserver)
       return "No server specified";
-   if (!xidport)
-      xidport = "7810";
    int psock = -1;
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
        *a;
-   int r = getaddrinfo(xidserver, xidport, &base, &res);
+   int r = getaddrinfo(xidserver, "7810", &base, &res);
    if (r)
       status("*Cannot locate to print server");
    for (a = res; a; a = a->ai_next)
@@ -430,7 +427,7 @@ int main(int argc, const char *argv[])
 
    if (xidserver)
    {
-      const char *er = xid_connect(xidserver, xidport, keyfile, certfile, jin);
+      const char *er = xid_connect(xidserver, keyfile, certfile, jin);
       if (er && *er)
       {
          status(er);
