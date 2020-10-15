@@ -58,6 +58,8 @@ static const char *msg(unsigned int e)
       return "Door open";
    if (e == 0x0002D300)
       return "Busy";
+   if (e == 0x0002D400)
+      return "Busy printing";
    if (e == 0x0002D800)
       return "Hardware";
    if (e == 0x0002F000)
@@ -110,6 +112,8 @@ static const char *msg(unsigned int e)
       return "Card position error";
    if (e == 0x0003AD00)
       return "Mag write fail";
+   if (e == 0x00062800)
+      return "Reset";
    return "Printer returned error (see code)";
 }
 
@@ -354,13 +358,13 @@ const char *printer_rx_check(void)
    if (error)
       return error;
    printer_rx();
-   if (!error && (rxerr >> 16) == 2)
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800))
    {                            // Wait
       while (queue)
          printer_rx();
       time_t giveup = time(0) + 300;
       const char *last = NULL;
-      while ((rxerr >> 16) == 2 && !error && time(0) < giveup)
+      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && time(0) < giveup)
       {
          const char *warn = msg(rxerr);
          rxerr = 0;
