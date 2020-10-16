@@ -1322,7 +1322,6 @@ int main(int argc, const char *argv[])
             warnx("Could not establish SSL client connection");
             continue;
          }
-
          if (!er)
             er = job(from);
          if (debug)
