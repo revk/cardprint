@@ -162,9 +162,7 @@ DWORD atrlen;
 void card_check(void)
 {                               // list the readers
    long res;
-   DWORD temp;
-   char *r,
-   *e;
+   DWORD len;
    freez(readeric);
    freez(readerrfid);
    if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
@@ -172,31 +170,30 @@ void card_check(void)
       warnx("Cannot get PCSC context, is pcscd running?");
       return;
    }
-   if ((res = SCardListReaders(cardctx, NULL, NULL, &temp)) != SCARD_S_SUCCESS)
+   if ((res = SCardListReaders(cardctx, NULL, NULL, &len)) != SCARD_S_SUCCESS)
    {
       warnx("Cannot get reader list (%s)", pcsc_stringify_error(res));
       return;
    }
-   if (!(r = malloc(temp)))
-   {
-      warnx("Cannot allocated %d bytes for reader list", (int) temp);
-      return;
-   }
-   if ((res = SCardListReaders(cardctx, NULL, r, &temp)) != SCARD_S_SUCCESS)
+   char *r = NULL;
+   if (!(r = malloc(len)))
+      errx(1, "malloc");
+   if ((res = SCardListReaders(cardctx, NULL, r, &len)) != SCARD_S_SUCCESS)
    {
       warnx("Cannot list readers (%s)", pcsc_stringify_error(res));
       return;
    }
-   e = r + temp;
-   while (*r && r < e)          // && !error)
+   char *p = r,
+       *e = r + len;
+   while (*p && p < e)          // && !error)
    {
-      if (!readeric && strstr(r, "HID Global OMNIKEY 3x21 Smart Card Reader"))
-         readeric = strdup(r);
-      else if (!readerrfid && strstr(r, "OMNIKEY AG CardMan 5121"))
-         readerrfid = strdup(r);
+      if (!readeric && strstr(p, "HID Global OMNIKEY 3x21 Smart Card Reader"))
+         readeric = strdup(p);
+      else if (!readerrfid && strstr(p, "OMNIKEY AG CardMan 5121"))
+         readerrfid = strdup(p);
       else
-         warnx("Additional card reader %s ignored", r);
-      r += strlen(r) + 1;
+         warnx("Additional card reader %s ignored", p);
+      p += strlen(p) + 1;
    }
    free(r);
 }
@@ -290,17 +287,19 @@ unsigned char xid8600 = 0;      // Is an XID8600
 j_t j_new(void)
 {
    j_t j = j_create();
-   if (status)
-      j_store_string(j, "status", error ? "Error" : status);
    if (posn != POS_UNKNOWN)
       j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
    if (error)
    {
+      j_store_string(j, "status", "Error");
       j_t e = j_store_object(j, "error");
       j_store_string(e, "description", error);
       if (rxerr)
          j_store_stringf(e, "code", "%08X", rxerr);
-   }
+   } else if (rxerr)
+      j_store_string(j, "status", msg(rxerr));
+   else if (status)
+      j_store_string(j, "status", status);
    if (count)
       j_store_int(j, "count", count);
    return j;
@@ -492,22 +491,18 @@ const char *printer_rx_check(void)
 {
    if (error)
       return error;
-   printer_rx();
    if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800))
    {                            // Wait
       while (queue)
          printer_rx();
       time_t giveup = time(0) + 300;
-      const char *last = NULL;
+      int last = 0;
       while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && time(0) < giveup)
       {
-         const char *warn = msg(rxerr);
-         rxerr = 0;
-         if (warn != last)
+         if (rxerr != last)
          {
-            last = warn;
+            last = rxerr;
             j_t j = j_new();
-            j_store_string(j, "status", warn);
             j_store_boolean(j, "wait", 1);
             client_tx(j);
          }
@@ -521,6 +516,8 @@ const char *printer_rx_check(void)
    }
    if (!error && rxerr)
       error = msg(rxerr);
+   else
+      printer_rx();
    return error;
 }
 
@@ -618,9 +615,12 @@ const char *check_position(void)
       return error;
    if (!printer_cmd(0x02020000))
    {
-      posn = buf[19];
-      if (buf[18])
-         posn = POS_OUT;
+      if (buf[7] >= 3)
+      {
+         posn = buf[19];
+         if (buf[18])
+            posn = POS_OUT;
+      }
    }
    return error;
 }
@@ -1160,6 +1160,7 @@ char *job(const char *from)
       }
       printer_tx_check();
    }
+   check_position();
    j_t j = j_new();
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
@@ -1173,8 +1174,6 @@ char *job(const char *from)
    check_position();
    if (posn >= 0)
       moveto(POS_REJECT);
-   check_position();
-   client_tx(j_new());
    // Handle messages both ways
    char *ers = NULL;
    if (!error)
