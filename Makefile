@@ -7,15 +7,13 @@ clean:
 OPTS=-fPIC -g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99 -Wall
 
 AXL/axl.c:
-	git submodule init AXL
-	git submodule update --remote AXL
+	git submodule update --init AXL
 
 AXL/axl.o: AXL/axl.c AXL
 	make -C AXL axl.o
 
 AJL/ajl.c:
-	git submodule init AJL
-	git submodule update --remote AJL
+	git submodule update --init AJL
 
 AJL/ajl.o: AJL/ajl.c AJL
 	make -C AJL ajl.o
