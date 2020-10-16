@@ -494,8 +494,10 @@ const char *printer_rx_check(ajl_t o)
       return error;
    if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800))
    {                            // Wait
-      while (queue)
+      while (queue && !error)
          printer_rx();
+      if (error)
+         return error;
       time_t giveup = time(0) + 300;
       int last = 0;
       while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && time(0) < giveup)
@@ -635,11 +637,11 @@ const char *moveto(int newposn, ajl_t o)
    if (posn == POS_IC)
    {
       card_disconnect();
-      printer_cmd(0x0A024000, o);       // Disengage contact station
+      printer_queue_cmd(0x0A024000);    // Disengage contact station
    } else if (posn == POS_RFID)
    {
       card_disconnect();
-      printer_cmd(0x0A025000, o);       // Disengage contact station
+      printer_queue_cmd(0x0A025000);    // Disengage contact station
    }
    if (posn < 0)
    {                            // not in machine
