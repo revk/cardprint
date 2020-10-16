@@ -410,7 +410,7 @@ int main(int argc, const char *argv[])
             errx(1, "%s", er);
       }
       j_t j = j_create();
-      char *er = j_recv(j, o);
+      char *er = j_recv(j, i);
       int n;
       if (!er && (n = atoi(j_get(j, "dpi") ? : "")))
       {
@@ -441,7 +441,7 @@ int main(int argc, const char *argv[])
          status("Printing");
       }
       if (!er)
-         while (!(er = j_recv(j, o)))
+         while (!(er = j_recv(j, i)))
          {
             const char *v;
             if ((v = j_get(j, "status")))

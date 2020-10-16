@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdlib.h>
@@ -36,12 +37,12 @@
 unsigned int dpi = 300;
 #define	cardw	(3370*dpi/1000) // Actual card width IEC-7810 ID-1 3.370"
 #define	cardh	(2125*dpi/1000) // Actual card height IEC-7810 ID-1 2.125"
-#define	imagew	(1024*300/dpi)  // Large image width
-#define	imageh	(640*300/dpi)   // Large image height
-#define	maticaw	(1036*300/dpi)  // Matica card width
-#define	maticah	(664*300/dpi)   // Matica card heigh
-#define	zebraw	(1024*300/dpi)  // Zebra card width
-#define	zebrah	(648*300/dpi)   // Zebra card heigh
+#define	imagew	(1024*dpi/300)  // Large image width
+#define	imageh	(640*dpi/300)   // Large image height
+#define	maticaw	(1036*dpi/300)  // Matica card width
+#define	maticah	(664*dpi/300)   // Matica card heigh
+#define	zebraw	(1024*dpi/300)  // Zebra card width
+#define	zebrah	(648*dpi/300)   // Zebra card heigh
 #define       maxw    (cardw+dpi)       // Max size we will do
 #define       maxh    (cardh+dpi)       // Max size we will do
 
@@ -237,7 +238,29 @@ unsigned char *loadfile(const char *tag, const char *filename, int width, int he
       {                         // Make an SVG from bitmaps
          xml_t g = xml_element_add(svg, "g");
          xml_add(g, "@id", tag);
-
+         xml_t i = xml_element_add(g, "image");
+         xml_addf(i, "@width", "%d", width);
+         xml_addf(i, "@height", "%d", height);
+         xml_add(i, "@x", "0");
+         xml_add(i, "@y", "0");
+         int f = open(filename, O_RDONLY);
+         if (f < 0)
+            err(1, "Cannot open png");
+         struct stat st;
+         if (fstat(f, &st) < 0)
+            err(1, "Cannot stat png");
+         size_t length = st.st_size;
+         void *addr = mmap(NULL, length, PROT_READ, MAP_PRIVATE, f, 0);
+         if (addr == MAP_FAILED)
+            err(1, "Cannot map png");
+         size_t len = (length + 5) / 6 * 8 + 3;
+         char *b64 = malloc(len);
+         if (!b64)
+            errx(1, "malloc");
+         xml_addf(i, "@xlink:href", "data:image/png;base64,%s", xml_baseN(length, addr, len, b64, BASE64, 6));
+         free(b64);
+         munmap(addr, length);
+         close(f);
       } else
       {                         // image - convert to rgba in BMP style
          if (debug)
@@ -719,15 +742,6 @@ int main(int argc, const char *argv[])
 
    if (!strcasecmp(format, "zebra") || !strcasecmp(format, "matica") || !strcasecmp(format, "svg"))
    {                            // Generate matica file.
-      if (!strcasecmp(format, "svg"))
-      {
-         svg = xml_tree_new("svg");
-         xml_element_set_namespace(svg, xml_namespace(svg, NULL, "http://www.w3.org/2000/svg"));
-         xml_add(svg, "@version", "1.1");
-         xml_addf(svg, "@width", "%d", maticaw);
-         xml_addf(svg, "@height", "%d", maticah);
-         // TODO
-      }
       int width = 0,
           height = 0;
       if (*format == 'Z')
@@ -735,11 +749,23 @@ int main(int argc, const char *argv[])
          longedge = 1 - longedge;
          width = zebraw;
          height = zebrah;
-      }
-      if (*format == 'M')
+      } else
       {                         // Matica raw format
          width = maticaw;
          height = maticah;
+      }
+      if (!strcasecmp(format, "svg"))
+      {
+         svg = xml_tree_new("svg");
+         xml_element_set_namespace(svg, xml_namespace(svg, NULL, "http://www.w3.org/2000/svg"));
+         xml_namespace(svg, "xlink", "http://www.w3.org/1999/xlink");
+         xml_add(svg, "@version", "1.1");
+         xml_addf(svg, "@width", "%fmm", 25.4 * width / dpi);
+         xml_addf(svg, "@height", "%fmm", 25.4 * height / dpi);
+         xml_addf(svg, "@viewBox", "0 0 %d %d", width, height);
+         xml_addf(svg, "@dpi", "%d", dpi);
+         xml_addf(svg, "@cols", "%d", width);
+         xml_addf(svg, "@rows", "%d", height);
       }
       c1 = loadfile("C1", c1file, width, height, 24, 0);
       k1 = loadfile("K1", k1file, width, height, black, 0);
@@ -750,7 +776,10 @@ int main(int argc, const char *argv[])
       int o = fileno(stdout);
       if (svg)
       {
-         xml_write(fdopen(o, "w"), svg);
+         FILE *f = fdopen(o, "w");
+         xml_write(f, svg);
+         fflush(f);
+         fclose(f);
          xml_tree_delete(svg);
       } else
       {
