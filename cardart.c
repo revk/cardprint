@@ -49,6 +49,7 @@ int debug = 0;
 int fast = 0;
 int unsafe = 0;
 int keepfiles = 0;
+xml_t svg = NULL;
 
 int mkstempsuffix(char *fn)
 {
@@ -85,7 +86,7 @@ int mkstempsuffix(char *fn)
 #endif
 }
 
-unsigned char *loadfile(const char *filename, int width, int height, int bpp, int flip)
+unsigned char *loadfile(const char *tag, const char *filename, int width, int height, int bpp, int flip)
 {                               // Load a file - makes in to a BMP with alpha 0xFF for visible
    if (!filename)
       return NULL;
@@ -232,6 +233,12 @@ unsigned char *loadfile(const char *filename, int width, int height, int bpp, in
          filename = strdup(tmp);        //  Used to convert to bmp
          zaplater = filename;
       }
+      if (svg)
+      {                         // Make an SVG from bitmaps
+         xml_t g = xml_element_add(svg, "g");
+         xml_add(g, "@id", tag);
+
+      } else
       {                         // image - convert to rgba in BMP style
          if (debug)
             fprintf(stderr, "Convert to RGBA %s\n", filename);
@@ -301,46 +308,49 @@ unsigned char *loadfile(const char *filename, int width, int height, int bpp, in
             errx(1, "Cannot stat: %s", filename);
       }
    }
-   if (w)
-   {                            // rgba
-      if (s.st_size != w * h * 4)
-         errx(1, "%s bad file size", filename);
-      m = malloc(s.st_size + 54);       // Include BMP header
-      if (!m)
-         errx(1, "malloc");
-      memset(m, 0, 54);
-      if (read(f, m + 54, s.st_size) != s.st_size)
-         errx(1, "Bad read");
-      close(f);
-      // Some data in pseudo BMP header
-      m[10] = 54;               // offset to actual data
-      m[28] = 32;               // RGBA
-      m[18] = w;
-      m[19] = (w >> 8);
-      m[22] = h;
-      m[23] = (h >> 8);
-   } else
+   if (!svg)
    {
-      if (s.st_size < 54)
-         errx(1, "%s file too small", filename);
-      if (s.st_size > 5000000)
-         errx(1, "%s file too large", filename);
-      m = malloc(s.st_size);
-      if (!m)
-         errx(1, "No memory for %llu bytes", (unsigned long long) s.st_size);
-      l = read(f, m, s.st_size);
-      if (l < 0)
-         errx(1, "Read failed: %s", filename);
-      if (l < s.st_size)
-         errx(1, "%s did not read whole file", filename);
-      close(f);
-      if (m[0] != 0x42 || m[1] != 0x4D || m[6] || m[7] || m[8] || m[9] || m[15] || m[26] != 1 || m[27])
-         errx(1, "Image file convert failed");
-      temp = (m[10] + (m[11] << 8) + (m[12] << 16) + (m[13] << 24));
-      if (temp > s.st_size)
-         errx(1, "%s Bad offset", filename);
-      if (m[30] || m[31] || m[32] || m[33])
-         errx(1, "%s Use uncompressed BMPs %02X%02X%02X%02X", filename, m[30], m[31], m[32], m[33]);
+      if (w)
+      {                         // rgba
+         if (s.st_size != w * h * 4)
+            errx(1, "%s bad file size", filename);
+         m = malloc(s.st_size + 54);    // Include BMP header
+         if (!m)
+            errx(1, "malloc");
+         memset(m, 0, 54);
+         if (read(f, m + 54, s.st_size) != s.st_size)
+            errx(1, "Bad read");
+         close(f);
+         // Some data in pseudo BMP header
+         m[10] = 54;            // offset to actual data
+         m[28] = 32;            // RGBA
+         m[18] = w;
+         m[19] = (w >> 8);
+         m[22] = h;
+         m[23] = (h >> 8);
+      } else
+      {
+         if (s.st_size < 54)
+            errx(1, "%s file too small", filename);
+         if (s.st_size > 5000000)
+            errx(1, "%s file too large", filename);
+         m = malloc(s.st_size);
+         if (!m)
+            errx(1, "No memory for %llu bytes", (unsigned long long) s.st_size);
+         l = read(f, m, s.st_size);
+         if (l < 0)
+            errx(1, "Read failed: %s", filename);
+         if (l < s.st_size)
+            errx(1, "%s did not read whole file", filename);
+         close(f);
+         if (m[0] != 0x42 || m[1] != 0x4D || m[6] || m[7] || m[8] || m[9] || m[15] || m[26] != 1 || m[27])
+            errx(1, "Image file convert failed");
+         temp = (m[10] + (m[11] << 8) + (m[12] << 16) + (m[13] << 24));
+         if (temp > s.st_size)
+            errx(1, "%s Bad offset", filename);
+         if (m[30] || m[31] || m[32] || m[33])
+            errx(1, "%s Use uncompressed BMPs %02X%02X%02X%02X", filename, m[30], m[31], m[32], m[33]);
+      }
    }
    if (debug)
       fprintf(stderr, "%s size %lld\n", filename, (unsigned long long) s.st_size);
@@ -352,7 +362,6 @@ unsigned char *loadfile(const char *filename, int width, int height, int bpp, in
 int main(int argc, const char *argv[])
 {
    int c;
-   int svg = 0;
    const char *c1file = NULL;
    const char *k1file = NULL;
    const char *u1file = NULL;
@@ -378,14 +387,13 @@ int main(int argc, const char *argv[])
       { "u2", 'U', POPT_ARG_STRING, &u2file, 0, "UV second side", "filename" },
       { "i2", 'I', POPT_ARG_STRING, &i2file, 0, "Inhibit second side", "filename" },
       { "output", 'o', POPT_ARG_STRING, &outfile, 0, "Output file", "filename" },
-      { "format", 'f', POPT_ARG_STRING, &format, 0, "Format", "small/medium/large/Matica/Zebra/WxH" },
+      { "format", 'f', POPT_ARG_STRING, &format, 0, "Format", "small/medium/large/Matica/Zebra/WxH/svg" },
       { "trans", 0, POPT_ARG_NONE, &trans, 0, "Make partly transparent for image overlay" },
       { "long-edge", 0, POPT_ARG_NONE, &longedge, 0, "Second side is flipped on long edge not short" },
       { "unsafe", 0, POPT_ARG_NONE, &unsafe, 0, "Allow unsafe ghostscript" },
       { "fast", 0, POPT_ARG_NONE, &fast, 0, "Faster preview" },
       { "dpi", 0, POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &dpi, 0, "DPI", "N" },
       { "keep-files", 0, POPT_ARGFLAG_DOC_HIDDEN | POPT_ARG_NONE, &keepfiles, 0, "Keep temp files" },
-      { "svg", 0, POPT_ARG_NONE, &svg, 0, "Make SVG for xidsvg style output" }, // TODO
       { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
       POPT_AUTOHELP { }
    };
@@ -402,6 +410,7 @@ int main(int argc, const char *argv[])
       return -1;
    }
 
+
    unsigned char *c1 = NULL,
        *k1 = NULL,
        *u1 = NULL,
@@ -411,7 +420,7 @@ int main(int argc, const char *argv[])
        *u2 = NULL,
        *i2 = NULL;
 
-   if (isdigit(*format) || strchr("sml", *format))
+   if (isdigit(*format) || !strcasecmp(format, "small") || !strcasecmp(format, "medium") || !strcasecmp(format, "large"))
    {                            // Generate display image
       // Note, using RGBA conversion, alpha is 0xFF for visible, 0x00 for invisible
       int height = imageh,
@@ -448,16 +457,14 @@ int main(int argc, const char *argv[])
          else
             height = cardh * width / cardw;
       }
-      c1 = loadfile(c1file, width, height, 24, 0);
-      k1 = loadfile(k1file, width, height, black, 0);
-      u1 = loadfile(u1file, width, height, 8, 0);
-      i1 = loadfile(i1file, width, height, 1, 0);
-      c2 = loadfile(c2file, width, height, 24, 0);
-      k2 = loadfile(k2file, width, height, black, 0);
-      u2 = loadfile(u2file, width, height, 8, 0);
-      i2 = loadfile(i2file, width, height, 1, 0);
-      if (!outfile)
-         errx(1, "Specify output file");
+      c1 = loadfile("C1", c1file, width, height, 24, 0);
+      k1 = loadfile("K1", k1file, width, height, black, 0);
+      u1 = loadfile("U1", u1file, width, height, 8, 0);
+      i1 = loadfile("I1", i1file, width, height, 1, 0);
+      c2 = loadfile("C2", c2file, width, height, 24, 0);
+      k2 = loadfile("K2", k2file, width, height, black, 0);
+      u2 = loadfile("U2", u2file, width, height, 8, 0);
+      i2 = loadfile("I2", i2file, width, height, 1, 0);
       int h = height;
       if (c2 || k2 || i2 || u2)
          h *= 2;                // Two sides on one image
@@ -660,14 +667,17 @@ int main(int argc, const char *argv[])
          p += width * height * 4;
       }
       load(c1, k1, i1, u1);
-      f = open(tmp2, O_WRONLY | O_CREAT, 0666);
+      f = 1;
+      if (outfile)
+         f = open(tmp2, O_WRONLY | O_CREAT, 0666);
       if (f < 0)
-         errx(1, "Cannot write %s", outfile);
+         errx(1, "Cannot write %s", outfile ? : "stdout");
       if (write(f, prev, s.st_size + 54) < 0)
          err(1, "write");
       close(f);
       // Convert to png or requested format using gm
       char tmp3[] = "/tmp/cardXXXXXX.png";
+      if (outfile)
       {
          char *e = strrchr(outfile, '.');
          if (e && strlen(e) == 4 && isalnum(e[1]) && isalnum(e[2]) && isalnum(e[3]))
@@ -707,8 +717,17 @@ int main(int argc, const char *argv[])
       return 0;
    }
 
-   if (strchr("WM", *format))
+   if (!strcasecmp(format, "zebra") || !strcasecmp(format, "matica") || !strcasecmp(format, "svg"))
    {                            // Generate matica file.
+      if (!strcasecmp(format, "svg"))
+      {
+         svg = xml_tree_new("svg");
+         xml_element_set_namespace(svg, xml_namespace(svg, NULL, "http://www.w3.org/2000/svg"));
+         xml_add(svg, "@version", "1.1");
+         xml_addf(svg, "@width", "%d", maticaw);
+         xml_addf(svg, "@height", "%d", maticah);
+         // TODO
+      }
       int width = 0,
           height = 0;
       if (*format == 'Z')
@@ -722,88 +741,95 @@ int main(int argc, const char *argv[])
          width = maticaw;
          height = maticah;
       }
-      c1 = loadfile(c1file, width, height, 24, 0);
-      k1 = loadfile(k1file, width, height, black, 0);
-      u1 = loadfile(u1file, width, height, 8, 0);
-      c2 = loadfile(c2file, width, height, 24, !longedge);
-      k2 = loadfile(k2file, width, height, black, !longedge);
-      u2 = loadfile(u2file, width, height, 8, !longedge);
+      c1 = loadfile("C1", c1file, width, height, 24, 0);
+      k1 = loadfile("K1", k1file, width, height, black, 0);
+      u1 = loadfile("U1", u1file, width, height, 8, 0);
+      c2 = loadfile("C1", c2file, width, height, 24, !longedge);
+      k2 = loadfile("K2", k2file, width, height, black, !longedge);
+      u2 = loadfile("U2", u2file, width, height, 8, !longedge);
       int o = fileno(stdout);
-      if (outfile && (o = open(outfile, O_WRONLY | O_CREAT, 0666)) < 0)
-         err(1, "Cannot write %s", outfile);
-      void panel(unsigned char *bmp, int colour) {      // Output a panel
-         unsigned char p[height * width];
-         memset(p, 0, sizeof(p));
-         if (bmp)
-         {
-            unsigned char *r = bmp + bmp[10] + (bmp[11] << 8) + (bmp[12] << 16) + (bmp[13] << 24);
-            int bpp = (bmp[28] + (bmp[29] << 8) + (bmp[30] << 16) + (bmp[31] << 24));
-            int row = (bmp[22] + (bmp[23] << 8) + (bmp[24] << 16) + (bmp[25] << 24));
-            int col = (bmp[18] + (bmp[19] << 8) + (bmp[20] << 16) + (bmp[21] << 24));
-            int line = ((col * bpp + 7) / 8 + 3) / 4 * 4;
-            if (debug)
-               fprintf(stderr, "%dx%dx%d\n", col, row, bpp);
-            int y = 0;
-            if (row > height)
-               r += (row - height) / 2 * line;
-            else
-               y = (height - row) / 2;
-            for (; y < height && row--; y++)
+      if (svg)
+      {
+         xml_write(fdopen(o, "w"), svg);
+         xml_tree_delete(svg);
+      } else
+      {
+         if (outfile && (o = open(outfile, O_WRONLY | O_CREAT, 0666)) < 0)
+            err(1, "Cannot write %s", outfile);
+         void panel(unsigned char *bmp, int colour) {   // Output a panel
+            unsigned char p[height * width];
+            memset(p, 0, sizeof(p));
+            if (bmp)
             {
-               unsigned char *i = r;
-               r += line;
-               int x = 0,
-                   c = col;
-               if (col > width)
-               {                // Skip half extra cols
-                  if (bpp == 1)
-                     i += (col - width) / 16;   // not ideal
-                  else
-                     i += (col - width) / 2 * (bpp / 8);
-               } else
-                  x = (width - col) / 2;
-               unsigned char *q = p + width * (height - y - 1),
-                   v = 0;
-               for (; x < width && c--; x++)
+               unsigned char *r = bmp + bmp[10] + (bmp[11] << 8) + (bmp[12] << 16) + (bmp[13] << 24);
+               int bpp = (bmp[28] + (bmp[29] << 8) + (bmp[30] << 16) + (bmp[31] << 24));
+               int row = (bmp[22] + (bmp[23] << 8) + (bmp[24] << 16) + (bmp[25] << 24));
+               int col = (bmp[18] + (bmp[19] << 8) + (bmp[20] << 16) + (bmp[21] << 24));
+               int line = ((col * bpp + 7) / 8 + 3) / 4 * 4;
+               if (debug)
+                  fprintf(stderr, "%dx%dx%d\n", col, row, bpp);
+               int y = 0;
+               if (row > height)
+                  r += (row - height) / 2 * line;
+               else
+                  y = (height - row) / 2;
+               for (; y < height && row--; y++)
                {
-                  if (bpp == 1)
-                  {
-                     if (!(x & 7))
-                        v = *i++;
-                     if ((v & 0x80))
-                        q[x] = 0xFF;
-                     v <<= 1;
-                  } else
-                  {
-                     if (colour < 0)
-                        q[x] = ((i[0] < 0x80 && i[3] > 0x80) ? 0xFF : 0);
+                  unsigned char *i = r;
+                  r += line;
+                  int x = 0,
+                      c = col;
+                  if (col > width)
+                  {             // Skip half extra cols
+                     if (bpp == 1)
+                        i += (col - width) / 16;        // not ideal
                      else
+                        i += (col - width) / 2 * (bpp / 8);
+                  } else
+                     x = (width - col) / 2;
+                  unsigned char *q = p + width * (height - y - 1),
+                      v = 0;
+                  for (; x < width && c--; x++)
+                  {
+                     if (bpp == 1)
                      {
-                        if (colour > 0 && bpp >= 24)
-                           q[x] = (i[colour - 1] ^ 0xFF);
+                        if (!(x & 7))
+                           v = *i++;
+                        if ((v & 0x80))
+                           q[x] = 0xFF;
+                        v <<= 1;
+                     } else
+                     {
+                        if (colour < 0)
+                           q[x] = ((i[0] < 0x80 && i[3] > 0x80) ? 0xFF : 0);
                         else
-                           q[x] = (*i ^ 0xFF);
-                        if (bpp == 32)
-                           q[x] = q[x] * i[3] / 255;
+                        {
+                           if (colour > 0 && bpp >= 24)
+                              q[x] = (i[colour - 1] ^ 0xFF);
+                           else
+                              q[x] = (*i ^ 0xFF);
+                           if (bpp == 32)
+                              q[x] = q[x] * i[3] / 255;
+                        }
+                        i += bpp / 8;
                      }
-                     i += bpp / 8;
                   }
                }
             }
+            if (write(o, p, sizeof(p)) < 0)
+               err(1, "write");
          }
-         if (write(o, p, sizeof(p)) < 0)
-            err(1, "write");
+         panel(c1, 3);
+         panel(c1, 2);
+         panel(c1, 1);
+         panel(k1, -1);
+         panel(u1, 0);
+         panel(c2, 3);
+         panel(c2, 2);
+         panel(c2, 1);
+         panel(k2, -1);
+         panel(u2, 0);
       }
-      panel(c1, 3);
-      panel(c1, 2);
-      panel(c1, 1);
-      panel(k1, -1);
-      panel(u1, 0);
-      panel(c2, 3);
-      panel(c2, 2);
-      panel(c2, 1);
-      panel(k2, -1);
-      panel(u2, 0);
       close(o);
       if (outfile)
          chmod(outfile, 0666);

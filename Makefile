@@ -32,8 +32,8 @@ xidsvg: xidsvg.c AXL/axl.o AJL/ajl.o
 xidsvg.o: xidsvg.c AXL/axl.h AJL/ajl.h
 	cc -O -c -o $@ $< ${OPTS} -DLIB
 
-cardart: cardart.c 
-	cc -O -o $@ $< ${OPTS} -lpopt
+cardart: cardart.c AXL/axl.o
+	cc -O -o $@ $< ${OPTS} AXL/axl.o -lpopt -lcurl
 
 xidserver: xidserver.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
