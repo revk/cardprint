@@ -516,6 +516,9 @@ const char *printer_rx_check(ajl_t o)
       }
       if (!rxerr)
          client_tx(j_new(), o);
+      if (!error && rxerr)
+         error = msg(rxerr);
+      return error;
    }
    if (!error && rxerr)
       error = msg(rxerr);
