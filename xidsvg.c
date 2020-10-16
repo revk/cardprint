@@ -30,6 +30,7 @@
 #include <execinfo.h>
 #include <axl.h>
 #include <ajl.h>
+#include <ajlparse.h>
 #include "xidsvg.h"
 
 #ifndef LIB
@@ -225,18 +226,21 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    return j;
 }
 
-const char *xid_connect(const char *xidserver, const char *keyfile, const char *certfile, j_stream_t * jin)
+const char *xid_connect(const char *xidserver, const char *keyfile, const char *certfile, ajl_t * i, ajl_t * o)
 {                               // Send to xidserver
-   status("Connecting");
+   if (i)
+      *i = NULL;
+   if (o)
+      *o = NULL;
    if (!xidserver)
-      return "No server specified";
+      return "No server";
    int psock = -1;
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
    struct addrinfo *res = NULL,
        *a;
    int r = getaddrinfo(xidserver, "7810", &base, &res);
    if (r)
-      status("*Cannot locate to print server");
+      return "Cannot locate to print server";
    for (a = res; a; a = a->ai_next)
    {
       int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
@@ -252,32 +256,46 @@ const char *xid_connect(const char *xidserver, const char *keyfile, const char *
    }
    freeaddrinfo(res);
    if (psock < 0)
-   {
-      status("*Cannot connect to print server");
       return "Cannot connect to print server";
-   }
-   status("Queued");
    SSL_library_init();
    SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());  // Negotiates TLS
    if (!ctx)
-      status("*Cannot make ctx");
+      return "Cannot make ctx";
    if (certfile && SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
-      status("*Cannot load cert file");
+      return "Cannot load cert file";
    if (keyfile && SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-      status("*Cannot load key file");
+      return "Cannot load key file";
    SSL *ss = SSL_new(ctx);
    if (!ss)
-      status("*Cannot make TLS");
-   if (!SSL_set_fd(ss, psock))
-      status("*Cannot connect socket");
+   {
+      close(psock);
+      return "Cannot make TLS";
+   }
+   SSL_set_fd(ss, psock);
    if (SSL_connect(ss) != 1)
-      status("*Cannot connect to xid server");
-   status("Connected");
-   char *er = j_stream_func(xid_read_func, ss, jin, ss);
-   SSL_shutdown(ss);
-   SSL_free(ss);
-   close(psock);
-   return er;
+   {
+      close(psock);
+      return "Cannot connect to xid server";
+   }
+   if (i)
+      *i = ajl_read_func(xid_read_func, ss);
+   if (o)
+      *o = ajl_write_func(xid_write_func, ss);
+   return NULL;
+}
+
+void xid_disconnect(ajl_t * i, ajl_t * o)
+{
+   SSL *ss = ajl_arg(*i);
+   if (ss)
+   {
+      int fd = SSL_get_fd(ss);
+      SSL_shutdown(ss);
+      SSL_free(ss);
+      close(fd);
+   }
+   ajl_delete(i);
+   ajl_delete(o);
 }
 
 #ifndef LIB
@@ -290,53 +308,6 @@ void mystatus(const char *status)
    }
    if (*status == '*')
       errx(1, "%s", status + 1);
-}
-
-char *jin(j_t i, void *arg)
-{
-   if (debug)
-      j_err(j_write_pretty(i, stderr));
-   const char *v;
-   if ((v = j_get(i, "status")))
-      status(v);
-   if ((v = j_get(i, "count")))
-      count = atoi(v);
-   if (j_find(i, "error"))
-   {
-      v = strdup(j_get(i, "error.description"));
-      status(v);
-      return (char *) v;
-   }
-   int n;
-   if ((n = atoi(j_get(i, "dpi") ? : "")))
-   {
-      if (dpi < 0)
-         dpi = n;
-      else if (dpi != n)
-         return strdup("DPI mismatch (printer)");
-   }
-   if ((n = atoi(j_get(i, "rows") ? : "")))
-   {
-      if (rows < 0)
-         rows = n;
-      else if (rows != n)
-         return strdup("Rows mismatch (printer)");
-   }
-   if ((n = atoi(j_get(i, "cols") ? : "")))
-   {
-      if (cols < 0)
-         cols = n;
-      else if (cols != n)
-         return strdup("Cols mismatch (printer)");
-   }
-   if (j_find(i, "id"))
-   {                            // Send print
-      j_t j = xid_compose(svg, dpi, rows, cols);
-      j_err(j_write_func(j, xid_write_func, arg));
-      j_delete(&j);
-      status("Printing");
-   }
-   return NULL;
 }
 
 int main(int argc, const char *argv[])
@@ -431,14 +402,63 @@ int main(int argc, const char *argv[])
 
    if (xidserver)
    {
-      const char *er = xid_connect(xidserver, keyfile, certfile, jin);
-      if (er && *er)
+      ajl_t i,
+       o;
       {
-         status(er);
-         errx(1, "Failed %s", er);
+         const char *er = xid_connect(xidserver, keyfile, certfile, &i, &o);
+         if (er)
+            errx(1, "%s", er);
       }
-      if (!count)
+      j_t j = j_create();
+      char *er = j_recv(j, o);
+      int n;
+      if (!er && (n = atoi(j_get(j, "dpi") ? : "")))
+      {
+         if (dpi < 0)
+            dpi = n;
+         else if (dpi != n)
+            er = strdup("DPI mismatch (printer)");
+      }
+      if (!er && (n = atoi(j_get(j, "rows") ? : "")))
+      {
+         if (rows < 0)
+            rows = n;
+         else if (rows != n)
+            er = strdup("Rows mismatch (printer)");
+      }
+      if (!er && (n = atoi(j_get(j, "cols") ? : "")))
+      {
+         if (cols < 0)
+            cols = n;
+         else if (cols != n)
+            er = ("Cols mismatch (printer)");
+      }
+      if (!er)
+      {
+         j_t j = xid_compose(svg, dpi, rows, cols);
+         j_err(j_send(j, o));
+         j_delete(&j);
+         status("Printing");
+      }
+      if (!er)
+         while (!(er = j_recv(j, o)))
+         {
+            const char *v;
+            if ((v = j_get(j, "status")))
+               status(v);
+            if ((v = j_get(j, "count")))
+               count = atoi(v);
+            if (j_find(j, "error"))
+               er = strdup(j_get(j, "error.description"));
+         }
+      j_delete(&j);
+      xid_disconnect(&i, &o);
+      if (er && *er)
+         status(er);
+      else if (!count)
          status("Nothing printed");
+      if (er)
+         free(er);
    }
 
    xml_tree_delete(svg);
