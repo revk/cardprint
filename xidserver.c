@@ -494,8 +494,10 @@ const char *printer_rx_check(ajl_t o)
       return error;
    if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800))
    {                            // Wait
-      while (queue)
+      while (queue && !error)
          printer_rx();
+      if (error)
+         return error;
       time_t giveup = time(0) + 300;
       int last = 0;
       while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && time(0) < giveup)
@@ -514,6 +516,9 @@ const char *printer_rx_check(ajl_t o)
       }
       if (!rxerr)
          client_tx(j_new(), o);
+      if (!error && rxerr)
+         error = msg(rxerr);
+      return error;
    }
    if (!error && rxerr)
       error = msg(rxerr);
@@ -561,7 +566,7 @@ const char *printer_tx_check(ajl_t o)
    if (error)
       return error;
    printer_tx();
-   while (queue)
+   while (queue && !error)
       printer_rx_check(o);      // Catch up
    return error;
 }
@@ -603,14 +608,16 @@ const char *printer_cmd(unsigned int cmd, ajl_t o)
 
 const char *check_status(ajl_t o)
 {
-   while (queue)
+   if (error)
+      return error;
+   while (queue && !error)
       printer_rx_check(o);
    return printer_cmd(0x01020000, o);
 }
 
 const char *check_position(ajl_t o)
 {
-   while (queue)
+   while (queue && !error)
       printer_rx_check(o);
    if (error)
       return error;
@@ -633,14 +640,15 @@ const char *moveto(int newposn, ajl_t o)
    if (posn == POS_IC)
    {
       card_disconnect();
-      printer_cmd(0x0A024000, o);       // Disengage contact station
+      printer_queue_cmd(0x0A024000);    // Disengage contact station
    } else if (posn == POS_RFID)
    {
       card_disconnect();
-      printer_cmd(0x0A025000, o);       // Disengage contact station
+      printer_queue_cmd(0x0A025000);    // Disengage contact station
    }
    if (posn < 0)
    {                            // not in machine
+      check_status(o);
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
@@ -667,11 +675,13 @@ const char *moveto(int newposn, ajl_t o)
    if (posn == POS_IC)
    {
       printer_cmd(0x0A020000, o);       // Engage contacts
+      check_status(o);
       if ((error = card_connect(readeric, o)))
          return error;
    } else if (posn == POS_RFID)
    {
       printer_cmd(0x0A021000, o);       // Engage contacts
+      check_status(o);
       if ((error = card_connect(readerrfid, o)))
          return error;
    }
@@ -704,7 +714,6 @@ const char *client_tx(j_t j, ajl_t o)
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
-   ajl_t i = ajl_read_func(ss_read_func, ss);
    ajl_t o = ajl_write_func(ss_write_func, ss);
    // Connect to printer, get answer back, report to client
    card_check();
@@ -780,7 +789,15 @@ char *job(const char *from)
    check_status(o);
    check_position(o);
    if (posn >= 0)
+   {
+      if (debug)
+         warnx("Unexpected card position %d", posn);
       moveto(POS_REJECT, o);
+      check_status(o);
+      if (debug)
+         warnx("Rejected");
+   }
+   ajl_t i = ajl_read_func(ss_read_func, ss);
    // Handle messages both ways
    char *ers;
    j = j_create();
@@ -1111,7 +1128,7 @@ char *job(const char *from)
                      printer_data(rows * cols, data[p]);
                      printer_tx();
                      printed |= (1 << p);
-                     while (queue > 3)
+                     while (queue > 3 && !error)
                         printer_rx_check(o);
                   }
                if (printed)
@@ -1151,7 +1168,7 @@ char *job(const char *from)
             print_side(j_index(print, 0));
             print_side(j_index(print, 1));
          }
-         while (queue)
+         while (queue && !error)
             printer_rx_check(o);
          if (printed)
          {
