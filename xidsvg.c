@@ -436,9 +436,9 @@ int main(int argc, const char *argv[])
       if (!er)
       {
          j_t j = xid_compose(svg, dpi, rows, cols);
+         status("Printing");
          j_err(j_send(j, o));
          j_delete(&j);
-         status("Printing");
       }
       if (!er)
          while (!(er = j_recv(j, i)))
