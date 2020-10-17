@@ -29,6 +29,157 @@
 #include <ajlparse.h>
 #include <png.h>
 
+
+// Protocol notes
+// Ethernet send/rx blocks consisting of sequence of 4 byte words
+// Tx (to printer)
+// 0:	is some sort of function - low bit of 1st byte is 0 for command
+// 	0: F0/F2
+// 	1: 00
+// 	2: 01	
+// 	   02	
+// 	   03	Start document
+// 	   04
+// 	   05
+// 	   06	Check status
+// 	3: 00
+// 1:	is count of words from this point (i.e. total-1)
+// 2:	is a parameter of some sort, usually 0
+// 3:	is sequence
+// 4:	onwards is data
+// Rx (from printer)
+// 0:	Ack/function low bit of first byte is 1 for response
+// 	0: F1/F3	Response
+// 	1: 00
+// 	2: 
+// 	   04	Response to document start
+// 	   06	Status
+// 	3: 00
+// 	F3000200 is initial message from printer
+// 1:	is count of words from this point (i.e. total-1)
+// 2:	is status/error (0=OK)
+// 3:	is sequence (normally echos request to which this is response)
+// The command syntax is then bytes starting on word 4
+// 0:	Command
+// 1:	Number of bytes following this
+// Commands:
+// 01:	Status check, send 2 bytes 00 00
+// 02:	Two bytes 00 00
+// 	Response is mode and position
+// 04:	Move to position, 2 bytes (flags,posn)
+// 	00	Normal
+// 	10	Flip
+// 	80	Film initialise
+//	Second byte is position
+//	Response is 
+//
+// Dump examples
+/*
+// Connect response
+// f300 0200 0000 001c
+   0000 0000 0003 3118 0000 0000 0000 0000
+   0000 0000 0000 5052 494e 5445 5230 3100
+   5bf0 b0c7 0000 0000 0000 0000 0000 0000
+   5849 4438 3630 3020 2020 2020 2020 2020
+   fe80 0000 0000 0000 923d 68ff fe02 58c3
+   2001 067c 2a40 0000 923d 68ff fe02 58c3
+   0000 0000 0000 0000 0000 0000 0000 0000
+// Document start
+// f200 0300 0000 001d
+   0000 0002 9999 9999 0000 0000 7809 1107
+   1529 0000 4f00 7700 6e00 6500 7200 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 4400 6f00 6300 7500 6d00 6500
+   6e00 7400 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000
+// Response
+// f300 0400 0000 0002
+   0000 0000 9999 9999
+// Check status
+// f000 0600 0000 0003
+   0000 0000 0000 0000 0100 0000
+// f100 0600 0000 0004
+   0000 0000 0000 0000 0106 04ff 02d0 0000	No card
+// f100 0600 0000 0004
+   0000 0000 0000 0000 0106 0400 0000 0000	OK
+// Check laminator status
+// f000 0600 0000 0003
+   0000 0000 0000 0000 3e00 0000
+// f100 0600 0000 0004
+   0000 0000 0000 0000 3e06 02fe 0000 0000	No laminator?
+// Test ready
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0102 0000
+// f100 0200 0000 0002
+   0002 d000 0000 0000				No card
+// f100 0100 0000 0002
+   0000 0000 0000 0000				Ready
+// Read position
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0202 0000
+// f100 0300 0000 0003
+   0000 0000 0000 0000 0102 0400		Card not in machine...
+// Card load to position 2 (Non contact)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 0002
+// f100 0100 0000 0002
+   0000 0000 0000 0000				
+// Card load position 4 (NG Card Exit)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 0004
+// f100 0200 0000 0002
+   0005 2a00 0000 0000				Won't!
+// Read position
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0202 0000
+// f100 0300 0000 0003
+   0000 0000 0000 0000 0102 0002		Position 2 mode 0 (supply with card try)
+// Print
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 0005 0000 0000	Transfer Eject
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 0000 0000 0000	Transfer Return
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 1000 0000 0000	Transfer turn
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 016f		Print (CMY/K/UV/PO) buffer 0 upper right
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 216f		^ buffer 1
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 026f		^ Lower left
+// f000 0100 0000 0003
+   0000 0002 0000 0000 0602 016f		^ Immediate (no change)
+// Card move
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 0001		// Position 1
+// f000 0100 0000 0003
+   0000 0002 0000 0000 0502 0001		^ Immediate (no change)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 1001		^ Flip
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 8001		^ Film initialise
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 0004		^ Exit
+// Initialise
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0302 0000
+// IC control
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 0000		// Contact / contact
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 1000		// No contact / contact
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 4000		// Contact / release
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 5000		// No contact / release
+
+
+
+*/
+
+
 // Loads of globals - single job at a time
 
 #define freez(n) do{if(n){free((void*)(n));n=NULL;}}while(0)    // Free in situ if needed and null
@@ -575,19 +726,6 @@ const char *printer_tx_check(ajl_t o)
 
 const char *printer_start_cmd(unsigned int cmd)
 {
-   // First byte if command
-   // Second is number of bytes after this byte
-   // Commands
-   // 1: Check status
-   // 2: Check position
-   // 3: Initialise
-   // 4: Load Move (third byte 80 for load maybe, 10 for flip, forth is position)
-   // 5: Move (forth is position)
-   // 6: Print to transfer film (forth byte is layers to transfer)
-   // 7: Transfer to card (third/forth same as move card, done after transfer)
-   // 8: Mag read
-   // 9: Mag write
-   // A: Contacts (0x40 disengage, 0x00 engage)
    if (error)
       return error;
    printer_start(0xF0000100, 0);
@@ -844,6 +982,7 @@ char *job(const char *from)
             encode(0x24, cmd);
          else if (j_isarray(cmd))
          {
+		 // 07 is JIS
             encode(0x16, j_index(cmd, 0));
             encode(0x24, j_index(cmd, 1));
             encode(0x34, j_index(cmd, 2));
