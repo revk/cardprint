@@ -33,46 +33,48 @@
 // Protocol notes
 // Ethernet send/rx blocks consisting of sequence of 4 byte words
 // Tx (to printer)
-// 0:	is some sort of function - low bit of 1st byte is 0 for command
-// 	0: F0/F2
-// 	1: 00
-// 	2: 01	
-// 	   02	
-// 	   03	Start document
-// 	   04
-// 	   05
-// 	   06	Check status
-// 	3: 00
-// 1:	is count of words from this point (i.e. total-1)
-// 2:	is a parameter of some sort, usually 0
-// 3:	is sequence
-// 4:	onwards is data
+// 0:   is some sort of function - low bit of 1st byte is 0 for command
+//      F2 03   Document info
+//      F0 01   Command
+//      F0 02	Load image
+//      F0 06   Check status
+// 1:   is count of words from this point (i.e. total-1)
+// 2:   is a parameter of some sort, usually 0
+// 3:   is sequence
+// 4:   onwards is data
 // Rx (from printer)
-// 0:	Ack/function low bit of first byte is 1 for response
-// 	0: F1/F3	Response
-// 	1: 00
-// 	2: 
-// 	   04	Response to document start
-// 	   06	Status
-// 	3: 00
-// 	F3000200 is initial message from printer
-// 1:	is count of words from this point (i.e. total-1)
-// 2:	is status/error (0=OK)
-// 3:	is sequence (normally echos request to which this is response)
+// 0:   Ack/function low bit of first byte is 1 for response
+//      F3 02   Connect response
+//      F3 04   Response to document info
+//      F1 02   Command response?
+//      F1 03   Command response error?
+// 1:   is count of words from this point (i.e. total-1)
+// 2:   is status/error (0=OK)
+// 3:   is sequence (normally echos request to which this is response)
 // The command syntax is then bytes starting on word 4
-// 0:	Command
-// 1:	Number of bytes following this
+// 0:   Command
+// 1:   Number of bytes following this
 // Commands:
-// 01:	Status check, send 2 bytes 00 00
-// 02:	Two bytes 00 00
-// 	Response is mode and position
-// 04:	Move to position, 2 bytes (flags,posn)
-// 	00	Normal
-// 	10	Flip
-// 	80	Film initialise
-//	Second byte is position
-//	Response is 
-//
+// 01:  Status check, send 2 bytes 00 00
+// 02:  Read position, response is position and mode
+// 03:  Initialise, 2 bytes 00 00
+// 04:  Load card, 2 bytes: flags and position
+//      00      Normal
+//      10      Flip
+//      80      Film initialise
+// 05:  Move card, 2 bytes as per load card
+// 06:  Print, two bytes, flags and position
+//      01      Upper right MAC
+//      02      Lower left MAC
+//      20      Buffer 1
+// 07:  Transfer, 6 bytes, flags and position and 00
+//      10      Flip
+// 08:  Mag read
+// 09:  Mag write
+// 0A:  Contacts, 2 bytes, flags and 00
+//      10      Not contact engage
+//      40      Not contactless engage
+// 0B:
 // Dump examples
 /*
 // Connect response
@@ -131,6 +133,10 @@
    0000 0000 0000 0000 0402 0004
 // f100 0200 0000 0002
    0005 2a00 0000 0000				Won't!
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 1000		Load flip
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 8000		Load film init
 // Read position
 // f000 0100 0000 0003
    0000 0000 0000 0000 0202 0000
@@ -174,9 +180,8 @@
    0000 0000 0000 0000 0a02 4000		// Contact / release
 // f000 0100 0000 0003
    0000 0000 0000 0000 0a02 5000		// No contact / release
-
-
-
+// Load image
+   F0000200 000A7F25 00000000 00000005 01000000 0029FC84 0029FC80 00000000 ...
 */
 
 
@@ -652,15 +657,18 @@ const char *printer_rx_check(ajl_t o)
       if (error)
          return error;
       time_t giveup = time(0) + 300;
+      time_t update = 0;
+      time_t now = 0;
       int last = 0;
-      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && time(0) < giveup)
+      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && (now = time(0)) < giveup)
       {
-         if (rxerr != last)
+         if (rxerr != last || now < update)
          {
             last = rxerr;
             j_t j = j_new();
             j_store_boolean(j, "wait", 1);
             client_tx(j, o);
+            update = now;
          }
          usleep(100000);
          printer_start_cmd(0x01020000);
@@ -777,14 +785,10 @@ const char *moveto(int newposn, ajl_t o)
 {
    if (error || posn == newposn)
       return error;             // Nothing to do
-   if (posn == POS_IC)
+   if (posn == POS_IC || posn == POS_RFID)
    {
       card_disconnect();
-      printer_queue_cmd(0x0A024000);    // Disengage contact station
-   } else if (posn == POS_RFID)
-   {
-      card_disconnect();
-      printer_queue_cmd(0x0A025000);    // Disengage contact station
+      printer_queue_cmd(0x0A025000);    // Disengage stations
    }
    if (posn < 0)
    {                            // not in machine
@@ -814,13 +818,13 @@ const char *moveto(int newposn, ajl_t o)
    posn = newposn;
    if (posn == POS_IC)
    {
-      printer_cmd(0x0A020000, o);       // Engage contacts
+      printer_cmd(0x0A024000, o);       // Engage contacts, not RFID
       check_status(o);
       if ((error = card_connect(readeric, o)))
          return error;
    } else if (posn == POS_RFID)
    {
-      printer_cmd(0x0A021000, o);       // Engage contacts
+      printer_cmd(0x0A021000, o);       // Engage RFID, not contacts
       check_status(o);
       if ((error = card_connect(readerrfid, o)))
          return error;
@@ -982,7 +986,7 @@ char *job(const char *from)
             encode(0x24, cmd);
          else if (j_isarray(cmd))
          {
-		 // 07 is JIS
+            // 07 is JIS
             encode(0x16, j_index(cmd, 0));
             encode(0x24, j_index(cmd, 1));
             encode(0x34, j_index(cmd, 2));
