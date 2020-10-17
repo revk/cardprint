@@ -1524,18 +1524,21 @@ char *job(const char *from)
          }
          check_status(o);
          check_position(o);
+         client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "reject")))
       {
          moveto(POS_REJECT, o);
          check_status(o);
          check_position(o);
+         client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT, o);
          check_status(o);
          check_position(o);
+         client_tx(j_new(), o);
          break;
       }
       check_position(o);
