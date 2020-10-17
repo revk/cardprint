@@ -662,11 +662,11 @@ const char *printer_rx_check(ajl_t o)
       int last = 0;
       while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && (now = time(0)) < giveup)
       {
-         if (rxerr != last || now < update)
+         if (rxerr != last || now > update)
          {
             last = rxerr;
             j_t j = j_new();
-            j_store_boolean(j, "wait", 1);
+            j_store_true(j, "wait");
             client_tx(j, o);
             update = now;
          }
@@ -929,6 +929,7 @@ char *job(const char *from)
    j_store_int(j, "dpi", dpi);
    j_store_boolean(j, "ic", readeric);
    j_store_boolean(j, "rfid", readerrfid);
+   if(rxerr)j_store_true(j,"wait");
    client_tx(j, o);
    check_status(o);
    check_position(o);
