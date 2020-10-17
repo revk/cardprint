@@ -1328,16 +1328,19 @@ char *job(const char *from)
             status = "Unprinted";
          }
          check_status(o);
+	 check_position(o);
          break;
       } else if ((cmd = j_find(j, "reject")))
       {
          moveto(POS_REJECT, o);
          check_status(o);
+	 check_position(o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT, o);
          check_status(o);
+	 check_position(o);
          break;
       }
       check_position(o);
@@ -1455,7 +1458,8 @@ int main(int argc, const char *argv[])
       if (pid < 0)
          err(1, "Forking hell");
       if (!pid)
-      {                         // Child (fork to ensure memory leaks never and issue - yeh, cheating)
+      {                         // Child (fork to ensure memory leaks never and issue - yeh, cheating) - also handles err and alarm not exiting
+	      alarm(300);	// Just in case
          char from[INET6_ADDRSTRLEN + 1] = "";
          if (addr.sin6_family == AF_INET)
             inet_ntop(addr.sin6_family, &((struct sockaddr_in *) &addr)->sin_addr, from, sizeof(from));
@@ -1504,11 +1508,12 @@ int main(int argc, const char *argv[])
          ss = NULL;
          return 0;
       }
+      // Parent
+      close(s);
       int pstatus = 0;
       waitpid(pid, &pstatus, 0);
       if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
          warnx("Job failed");
-      close(s);
    }
    {
       int res;
