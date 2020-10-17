@@ -433,6 +433,12 @@ int main(int argc, const char *argv[])
          else if (cols != n)
             er = ("Cols mismatch (printer)");
       }
+      const char *v;
+      if ((v = j_get(j, "status")))
+         status(v);
+      while (j_test(j, "wait", 0) && !(er = j_recv(j, i)))
+         if ((v = j_get(j, "status")))
+            status(v);
       if (!er)
       {
          j_t j = xid_compose(svg, dpi, rows, cols);
@@ -443,7 +449,6 @@ int main(int argc, const char *argv[])
       if (!er)
          while (!(er = j_recv(j, i)))
          {
-            const char *v;
             if ((v = j_get(j, "status")))
                status(v);
             if ((v = j_get(j, "count")))
