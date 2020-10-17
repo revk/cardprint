@@ -31,13 +31,16 @@
 
 
 // Protocol notes
+// TCP 50730
 // Ethernet send/rx blocks consisting of sequence of 4 byte words
 // Tx (to printer)
 // 0:   is some sort of function - low bit of 1st byte is 0 for command
 //      F2 03   Document info
-//      F0 01   Command
-//      F0 02   Load image
-//      F0 06   Check status
+//      F0 00 01   Command
+//      F0 00 02   Load image
+//      F0 00 04   Get Settings (send set of setting words with 000000)
+//      F0 00 06   Check status
+//      FO 00 08   Change settings (send set of new settings works) - UDP...
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is a parameter of some sort, usually 0
 // 3:   is sequence
@@ -46,8 +49,10 @@
 // 0:   Ack/function low bit of first byte is 1 for response
 //      F3 02   Connect response
 //      F3 04   Response to document info
-//      F1 02   Command response?
-//      F1 03   Command response error?
+//      F1 00 01   Command response, OK?
+//      F1 00 02   Command response, Not OK?
+//      F1 00 03   Command response, error?
+//      F1 00 04   Settings
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is status/error (0=OK)
 // 3:   is sequence (normally echos request to which this is response)
@@ -63,11 +68,11 @@
 //      10      Flip
 //      80      Film initialise
 // 05:  Move card, 2 bytes as per load card
-// 06:  Print, two bytes, flags and position
-// 	00	No MAC on UV - yay!
-//      01      Upper right MAC on UV
-//      02      Lower left MAC on UV
-//      20      Buffer 1
+// 06:  Print, two bytes, flags
+//      0000    No MAC on UV - yay!
+//      0100    Upper right MAC on UV
+//      0200    Lower left MAC on UV
+//      2000    Buffer 1
 // 07:  Transfer, 6 bytes, flags and position and 00
 //      10      Flip
 // 08:  Mag read
@@ -183,8 +188,88 @@
    0000 0000 0000 0000 0a02 5000		// No contact / release
 // Load image
    F0000200 000A7F25 00000000 00000005 01000000 0029FC84 0029FC80 00000000 ...
+// Settings UDP
+	f000 0400
+	0x0020:  0000 001d 0000 0000 0000 0000 4600 0000
+	0x0030:  4700 0000 4a00 0000 4b00 0000 5c00 0000
+	0x0040:  4c00 0000 4d00 0000 4e00 0000 5500 0000
+	0x0050:  5600 0000 4f00 0000 5000 0000 3300 0000
+	0x0060:  1400 0000 1600 0000 1800 0000 2a00 0000
+	0x0070:  2800 0000 4800 0000 1d00 0000 1e00 0000
+	0x0080:  1b00 0000 2900 0000 1f00 0000 5d00 0000
+	0x0090:  5e00 0000 5f00 0000
+
+	// Looks like 4 bytes, starting with code and 00 00 00
+	// Response looks same with data in those three bytes
+	// len, type, data, so 0201NN is value NN
+
+	1402 0100	Card thickness 0=Standard, 2=Thin
+	1602 0100	Buzzer, 0=On,1=Off
+	1802 0108	Heat Roller power save, 6=45min,7=60min,8=Off
+	1d02 0101	Display mode, 0=counter,1=laminator state
+	1e02 0100	Display counter, 0=Total,1=Head,2=Free,3=Clean,4=Error
+	1b02 0103	Display contrast, 3=0,4=+1,5=+2
+	1f02 0100	Presumed security lock
+	2802 0101	Retry count,0-3
+	2902 0100	Mag JIS type, 0=LoCo,1=HiCo
+	2a02 0101	Mag ISO type, 0=LoCo,1=HiCo
+	3206 0400 0000 0000 Counter reset
+	3302 0100	Film type 0=1000, 2=750
+	4602 0103	K level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4702 0101	K mode, 0=Standard,1=Fine
+	4802 0103	YMC level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4a02 0106	UV Level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4b02 0103	PO level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4c02 0103	Transfer temp, 0=-2,1=-1,2=0,3=+1,4=+2
+	4d02 0101	Transfer speed front, 1=+1,2=0,3=-1,4=-2,5=-3
+	4e02 0101	Transfer speed back, 1=+1,2=0,3=-1,4=-2,5=-3
+	4f02 010a	Bend temp level, 10=Off,0=-5,1=-4,2=-3,3=-2
+	5002 0104	Bend speed, 0=-2,1=-1,2=0,3=+1,4=+2
+	5502 0100	MG Peel mode, 0=standard, 1=MG Stripe
+	5602 0100	Standby mode, 0=front wait, 1=back wait
+	5c02 0100	Heat roller Control, 0=Off,1=On
+	5d02 0100	Transfer speed front UV, 1=+1,2=0,3=-1,4=-2,5=-3
+	5e02 0100	Transfer speed back UV, 1=+1,2=0,3=-1,4=-2,5=-3
+	5f02 0100	Backside cool, 0=0ff, 1=On
+
 */
 
+typedef struct setting_s setting_t;
+const struct setting_s {
+   unsigned char tag;
+   const char *name;
+   const char *vals;
+} settings[] = {
+   { 0x14, "card-thickness", "standard//thin" },
+   { 0x16, "buzzer", "true/false" },
+   { 0x18, "hr-power-save", "//////45/60/false" },
+   { 0x1d, "display-mode", "counter/laminator" },
+   { 0x1e, "display-counter", "total/head/free/clean/error" },
+   { 0x1b, "display-contrast", "///0/1/2" },
+   { 0x1f, "security-lock", "false/true" },
+   { 0x28, "retry-count", "0/1/2/3" },
+   { 0x29, "jis-type", "loco/hico" },
+   { 0x2a, "iso-type", "loco/hico" },
+   { 0x33, "film-type", "1000/750" },
+   { 0x46, "k-level", "//-1/0/1/2/3" },
+   { 0x47, "k-mode", "standard/fine" },
+   { 0x48, "ymc-level", "//-1/0/1/2/3" },
+   { 0x4a, "uv-level", "//-1/0/1/2/3" },
+   { 0x4b, "po-level", "//-1/0/1/2/3}" },
+   { 0x4c, "transfer-temp", "-2/-1/0/1/2" },
+   { 0x4d, "transfer-speed-front", "/1/0/-1/-2/-3" },
+   { 0x4e, "transfer-speed-back", "/1/0/-1/-2/-3" },
+   { 0x4f, "bend-temp", "-5/-4/-3/-2///////false" },
+   { 0x50, "bend-speed", "-2/-1/0/1/2" },
+   { 0x55, "mg-peel-mode", "standard/stripe" },
+   { 0x56, "standby-mode", "front/back" },
+   { 0x5c, "hr-control", "false/true" },
+   { 0x5d, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
+   { 0x5e, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
+   { 0x5f, "backside-cool", "false/true" },
+};
+
+#define SETTINGS (sizeof(settings)/sizeof(*settings))
 
 // Loads of globals - single job at a time
 
@@ -569,7 +654,7 @@ const char *printer_tx(void)
    {
       fprintf(stderr, "Tx%d:", queue);
       int i = 0;
-      for (i = 0; i < buflen && i < 32 * 4 - 4; i++)
+      for (i = 0; i < buflen && i < 32 * 5 - 4; i++)
          fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
       if (i < buflen)
          fprintf(stderr, "... (%d)", buflen);
@@ -755,6 +840,100 @@ const char *printer_cmd(unsigned int cmd, ajl_t o)
    return printer_tx_check(o);
 }
 
+const char *set_settings(j_t s, ajl_t o)
+{
+   // TODO this seems to not work, maybe only works via UDP?
+   if (error)
+      return error;
+   while (queue && !error)
+      printer_rx_check(o);
+   unsigned char data[SETTINGS * 4] = { };
+   int p = 0;
+   for (int i = 0; i < SETTINGS; i++)
+   {
+      const char *v = j_get(s, settings[i].name);
+      if (!v)
+         continue;
+      int l = strlen(v);
+      if (!l)
+         continue;
+      const char *s = settings[i].vals;
+      int n = 0;
+      while (*s)
+      {
+         if (!strncmp(s, v, l))
+            break;
+         n++;
+         while (*s && *s != '/')
+            s++;
+         if (*s)
+            s++;
+      }
+      if (!*s)
+         error = "Bad setting";
+      else
+      {
+         data[p++] = settings[i].tag;
+         data[p++] = 2;
+         data[p++] = 1;
+         data[p++] = n;
+      }
+   }
+   printer_start(0xF0000800, 0);
+   printer_data(p, data);
+   printer_tx();
+   printer_rx();
+   return error;
+}
+
+const char *get_settings(j_t j, ajl_t o)
+{
+   if (error)
+      return error;
+   while (queue && !error)
+      printer_rx_check(o);
+   printer_start(0xF0000400, 0);
+   unsigned char data[SETTINGS * 4] = { };
+   for (int i = 0; i < SETTINGS; i++)
+      data[i * 4] = settings[i].tag;
+   printer_data(sizeof(data), data);
+   printer_tx();
+   printer_rx();
+   if (buf[7] == (sizeof(data) + 3) / 4 + 2)
+   {
+      memcpy(data, buf + 16, sizeof(data));
+      j_t s = j_store_object(j, "settings");
+      for (int i = 0; i < SETTINGS; i++)
+         if (data[i * 4] == settings[i].tag && data[i * 4 + 1] == 2 && data[i * 4 + 2] == 1)
+         {
+            int n = data[i * 4 + 3];
+            const char *v = settings[i].vals;
+            while (n--)
+            {
+               while (*v && *v != '/')
+                  v++;
+               if (*v)
+                  v++;
+            }
+            const char *e = v;
+            while (*e && *e != '/')
+               e++;
+            if (e > v)
+            {
+               if (isdigit(*v) || *v == '-')
+                  j_store_int(s, settings[i].name, atoi(v));
+               else if (e - v == 4 && !strncmp(v, "true", e - v))
+                  j_store_true(s, settings[i].name);
+               else if (e - v == 5 && !strncmp(v, "false", e - v))
+                  j_store_false(s, settings[i].name);
+               else
+                  j_store_stringn(s, settings[i].name, v, e - v);
+            }
+         }
+   }
+   return error;
+}
+
 const char *check_status(ajl_t o)
 {
    if (error)
@@ -923,6 +1102,7 @@ char *job(const char *from)
    }
    check_position(o);
    j_t j = j_new();
+   get_settings(j, o);
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
    j_store_int(j, "rows", rows);
@@ -930,7 +1110,8 @@ char *job(const char *from)
    j_store_int(j, "dpi", dpi);
    j_store_boolean(j, "ic", readeric);
    j_store_boolean(j, "rfid", readerrfid);
-   if(rxerr)j_store_true(j,"wait");
+   if (rxerr)
+      j_store_true(j, "wait");
    client_tx(j, o);
    check_status(o);
    check_position(o);
@@ -943,6 +1124,8 @@ char *job(const char *from)
       if (debug)
          warnx("Rejected");
    }
+
+
    ajl_t i = ajl_read_func(ss_read_func, ss);
    // Handle messages both ways
    char *ers;
@@ -959,6 +1142,14 @@ char *job(const char *from)
       if (debug)
          j_err(j_write_pretty(j, stderr));
       j_t cmd = NULL;
+      if ((cmd = j_find(j, "settings")))
+      {
+         if (j_isobject(cmd))
+            set_settings(cmd, o);
+         j_t j = j_new();
+         get_settings(j, o);
+         client_tx(j, o);
+      }
       if ((cmd = j_find(j, "mag")))
       {
          unsigned char temp[66 * 3];
@@ -1096,10 +1287,12 @@ char *job(const char *from)
                return NULL;
             unsigned char found = 0;
             unsigned char *data[8] = { };
-            const char *add(const char *tag, int layer) {
+            const char *add(const char *tag1, const char *tag2, int layer) {
                if (error)
                   return error;
-               const char *d = j_get(panel, tag);
+               const char *d = j_get(panel, tag1);
+               if (!d)
+                  d = j_get(panel, tag2);
                if (!d)
                   return NULL;
                if (strncasecmp(d, "data:image/png;base64,", 22))
@@ -1133,7 +1326,7 @@ char *job(const char *from)
                   int dx = (cols - (int) width) / 2,
                       dy = (rows - (int) height) / 2;
                   if (debug)
-                     warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag, side, width, height, dx, dy, cols, rows);
+                     warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag1, side, width, height, dx, dy, cols, rows);
                   png_set_expand(png_ptr);      // Expand palette, etc
                   png_set_strip_16(png_ptr);    // Reduce to 8 bit
                   png_set_packing(png_ptr);     // Unpack
@@ -1170,7 +1363,6 @@ char *job(const char *from)
                      {
                         int y = r + dy;
                         png_read_row(png_ptr, image, NULL);
-                        //if (r < 2 || r >= height - 2) warnx("Row %d y=%d Data %02X %02X ... %02X %02X", r, y, image[0], image[1], image[width - 2], image[width - 1]);
                         if (y >= 0 && y < rows)
                            for (int c = 0; c < width; c++)
                            {
@@ -1238,9 +1430,10 @@ char *job(const char *from)
                free(png);
                return NULL;
             }
-            add("C", 0);
-            add("K", 3);
-            add("U", 6);
+            add("C", "CMY", 0);
+            add("K", "K", 3);
+            add("P", "PO", 5);
+            add("U", "UV", 6);
             if (found)
             {
                moveto(POS_PRINT, o);    // ready to print
