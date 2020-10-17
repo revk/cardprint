@@ -433,6 +433,7 @@ int main(int argc, const char *argv[])
          else if (cols != n)
             er = ("Cols mismatch (printer)");
       }
+      while (j_test(j, "wait", 0) && !(er = j_recv(j, i)));
       if (!er)
       {
          j_t j = xid_compose(svg, dpi, rows, cols);

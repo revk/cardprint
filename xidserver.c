@@ -36,7 +36,7 @@
 // 0:   is some sort of function - low bit of 1st byte is 0 for command
 //      F2 03   Document info
 //      F0 01   Command
-//      F0 02	Load image
+//      F0 02   Load image
 //      F0 06   Check status
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is a parameter of some sort, usually 0
@@ -1328,19 +1328,19 @@ char *job(const char *from)
             status = "Unprinted";
          }
          check_status(o);
-	 check_position(o);
+         check_position(o);
          break;
       } else if ((cmd = j_find(j, "reject")))
       {
          moveto(POS_REJECT, o);
          check_status(o);
-	 check_position(o);
+         check_position(o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT, o);
          check_status(o);
-	 check_position(o);
+         check_position(o);
          break;
       }
       check_position(o);
@@ -1459,7 +1459,7 @@ int main(int argc, const char *argv[])
          err(1, "Forking hell");
       if (!pid)
       {                         // Child (fork to ensure memory leaks never and issue - yeh, cheating) - also handles err and alarm not exiting
-	      alarm(300);	// Just in case
+         alarm(300);            // Just in case
          char from[INET6_ADDRSTRLEN + 1] = "";
          if (addr.sin6_family == AF_INET)
             inet_ntop(addr.sin6_family, &((struct sockaddr_in *) &addr)->sin_addr, from, sizeof(from));
