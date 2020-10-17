@@ -64,8 +64,9 @@
 //      80      Film initialise
 // 05:  Move card, 2 bytes as per load card
 // 06:  Print, two bytes, flags and position
-//      01      Upper right MAC
-//      02      Lower left MAC
+// 	00	No MAC on UV - yay!
+//      01      Upper right MAC on UV
+//      02      Lower left MAC on UV
 //      20      Buffer 1
 // 07:  Transfer, 6 bytes, flags and position and 00
 //      10      Flip
