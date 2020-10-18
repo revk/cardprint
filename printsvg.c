@@ -70,6 +70,7 @@ char *jsstatus = NULL;
 
 int main(int argc, const char *argv[])
 {
+	warnx("Deprecated code in use");
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
