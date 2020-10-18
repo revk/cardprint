@@ -732,11 +732,11 @@ const char *printer_rx(void)
 }
 
 const char *printer_start_cmd(unsigned int cmd);
-const char *printer_rx_check(ajl_t o)
+const char *printer_rx_check(ajl_t o, int ignore)
 {
    if (error)
       return error;
-   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800))
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && (!ignore || rxerr != 0x0002D000))
    {                            // Wait
       while (queue && !error)
          printer_rx();
@@ -767,7 +767,7 @@ const char *printer_rx_check(ajl_t o)
          error = msg(rxerr);
       return error;
    }
-   if (!error && rxerr)
+   if (!error && rxerr && (!ignore || rxerr != 0x0002D000))
       error = msg(rxerr);
    else
       printer_rx();
@@ -808,13 +808,13 @@ void printer_data(unsigned int len, const unsigned char *data)
    buflen += len;
 }
 
-const char *printer_tx_check(ajl_t o)
+const char *printer_tx_check(ajl_t o, int ignore)
 {                               // Send and check reply
    if (error)
       return error;
    printer_tx();
    while (queue && !error)
-      printer_rx_check(o);      // Catch up
+      printer_rx_check(o, ignore);      // Catch up
    return error;
 }
 
@@ -837,7 +837,7 @@ const char *printer_queue_cmd(unsigned int cmd)
 const char *printer_cmd(unsigned int cmd, ajl_t o)
 {                               // Simple command and response
    printer_start_cmd(cmd);
-   return printer_tx_check(o);
+   return printer_tx_check(o, 0);
 }
 
 const char *set_settings(j_t s, ajl_t o)
@@ -846,7 +846,7 @@ const char *set_settings(j_t s, ajl_t o)
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o);
+      printer_rx_check(o, 1);
    unsigned char data[SETTINGS * 4] = { };
    int p = 0;
    for (int i = 0; i < SETTINGS; i++)
@@ -891,7 +891,7 @@ const char *get_settings(j_t j, ajl_t o)
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o);
+      printer_rx_check(o, 1);
    printer_start(0xF0000400, 0);
    unsigned char data[SETTINGS * 4] = { };
    for (int i = 0; i < SETTINGS; i++)
@@ -934,19 +934,19 @@ const char *get_settings(j_t j, ajl_t o)
    return error;
 }
 
-const char *check_status(ajl_t o)
+const char *check_status(ajl_t o, int ignore)
 {
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o);
+      printer_rx_check(o, ignore);
    return printer_cmd(0x01020000, o);
 }
 
-const char *check_position(ajl_t o)
+const char *check_position(ajl_t o, int ignore)
 {
    while (queue && !error)
-      printer_rx_check(o);
+      printer_rx_check(o, ignore);
    if (error)
       return error;
    if (!printer_cmd(0x02020000, o))
@@ -961,18 +961,22 @@ const char *check_position(ajl_t o)
    return error;
 }
 
-const char *moveto(int newposn, ajl_t o)
+const char *moveto(int newposn, ajl_t o, int ignore)
 {
    if (error || posn == newposn)
       return error;             // Nothing to do
-   if (posn == POS_IC || posn == POS_RFID)
+   if (posn == POS_IC)
+   {
+      card_disconnect();
+      printer_queue_cmd(0x0A024000);    // Disengage stations
+   } else if (posn == POS_RFID)
    {
       card_disconnect();
       printer_queue_cmd(0x0A025000);    // Disengage stations
    }
    if (posn < 0)
    {                            // not in machine
-      check_status(o);
+      check_status(o, ignore);
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
@@ -998,14 +1002,14 @@ const char *moveto(int newposn, ajl_t o)
    posn = newposn;
    if (posn == POS_IC)
    {
-      printer_cmd(0x0A024000, o);       // Engage contacts, not RFID
-      check_status(o);
+      printer_cmd(0x0A020000, o);       // Engage contacts
+      check_status(o, ignore);
       if ((error = card_connect(readeric, o)))
          return error;
    } else if (posn == POS_RFID)
    {
       printer_cmd(0x0A021000, o);       // Engage RFID, not contacts
-      check_status(o);
+      check_status(o, ignore);
       if ((error = card_connect(readerrfid, o)))
          return error;
    }
@@ -1043,7 +1047,7 @@ char *job(const char *from)
    card_check();
    count = 0;
    printer_connect();
-   printer_rx_check(o);
+   printer_rx_check(o, 0);
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
    status = "Connected";
@@ -1098,9 +1102,9 @@ char *job(const char *from)
          };
          printer_data(sizeof(reply), reply);
       }
-      printer_tx_check(o);
+      printer_tx_check(o, 0);
    }
-   check_position(o);
+   check_position(o, 0);
    j_t j = j_new();
    get_settings(j, o);
    j_store_string(j, "id", id);
@@ -1113,14 +1117,14 @@ char *job(const char *from)
    if (rxerr)
       j_store_true(j, "wait");
    client_tx(j, o);
-   check_status(o);
-   check_position(o);
+   check_status(o, 0);
+   check_position(o, 0);
    if (posn >= 0)
    {
       if (debug)
          warnx("Unexpected card position %d", posn);
-      moveto(POS_REJECT, o);
-      check_status(o);
+      moveto(POS_REJECT, o, 1);
+      check_status(o, 1);
       if (debug)
          warnx("Rejected");
    }
@@ -1188,11 +1192,11 @@ char *job(const char *from)
          {
             status = "Encoding";
             client_tx(j_new(), o);
-            moveto(POS_MAG, o);
-            check_position(o);
+            moveto(POS_MAG, o, 0);
+            check_position(o, 0);
             printer_start_cmd(0x09000000 + ((p + 2) << 16) + c);
             printer_data(p, temp);
-            printer_tx_check(o);
+            printer_tx_check(o, 0);
             status = "Encoded";
             client_tx(j_new(), o);
          }
@@ -1200,8 +1204,8 @@ char *job(const char *from)
          {                      // Read
             status = "Reading";
             client_tx(j_new(), o);
-            moveto(POS_MAG, o);
-            check_position(o);
+            moveto(POS_MAG, o, 0);
+            check_position(o, 0);
             // Load tacks separately as loading all at once causes error if any do not read
             void mread(j_t j, unsigned char tag) {
                char t = (tag >> 4) - 1;
@@ -1243,7 +1247,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "ic")))
       {
-         moveto(POS_IC, o);
+         moveto(POS_IC, o, 0);
          if (j_isstring(cmd))
          {
             unsigned char *tx = NULL;
@@ -1258,7 +1262,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "rfid")))
       {
-         moveto(POS_RFID, o);
+         moveto(POS_RFID, o, 0);
          if (j_isstring(cmd))
          {
             unsigned char *tx = NULL;
@@ -1273,7 +1277,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "mifare")))
       {
-         moveto(POS_RFID, o);
+         moveto(POS_RFID, o, 0);
          // TODO
       }
       if (print)
@@ -1436,7 +1440,7 @@ char *job(const char *from)
             add("U", "UV", 6);
             if (found)
             {
-               moveto(POS_PRINT, o);    // ready to print
+               moveto(POS_PRINT, o, 0); // ready to print
                if (side)
                {
                   status = "Second side";
@@ -1469,7 +1473,7 @@ char *job(const char *from)
                      printer_tx();
                      printed |= (1 << p);
                      while (queue > 3 && !error)
-                        printer_rx_check(o);
+                        printer_rx_check(o, 0);
                   }
                if (printed)
                {
@@ -1493,7 +1497,7 @@ char *job(const char *from)
                      }
                   }
                }
-               check_status(o);
+               check_status(o, 0);
             }
             for (int i = 0; i < 8; i++)
                if (data[i])
@@ -1509,7 +1513,7 @@ char *job(const char *from)
             print_side(j_index(print, 1));
          }
          while (queue && !error)
-            printer_rx_check(o);
+            printer_rx_check(o, 1);
          if (printed)
          {
             status = "Transfer";
@@ -1519,29 +1523,29 @@ char *job(const char *from)
             count++;
          } else
          {
-            moveto(POS_EJECT, o);       // Done anyway
+            moveto(POS_EJECT, o, 1);    // Done anyway
             status = "Unprinted";
          }
-         check_status(o);
-         check_position(o);
+         check_status(o, 1);
+         check_position(o, 1);
          client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "reject")))
       {
-         moveto(POS_REJECT, o);
-         check_status(o);
-         check_position(o);
+         moveto(POS_REJECT, o, 1);
+         check_status(o, 1);
+         check_position(o, 1);
          client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
-         moveto(POS_EJECT, o);
-         check_status(o);
-         check_position(o);
+         moveto(POS_EJECT, o, 1);
+         check_status(o, 1);
+         check_position(o, 1);
          client_tx(j_new(), o);
          break;
       }
-      check_position(o);
+      check_position(o, 0);
       client_tx(j_new(), o);
    }
    j_delete(&j);
