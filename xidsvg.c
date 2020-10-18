@@ -36,11 +36,6 @@
 #ifndef LIB
 #define xquoted(x)      #x
 #define quoted(x)       xquoted(x)
-#ifdef	XIDSERVER
-char *xidserver = quoted(XIDSERVER);
-#else
-char *xidserver = NULL;
-#endif
 #ifdef	PRINTCOLS
 const int cols = PRINTCOLS;
 #else
@@ -312,14 +307,13 @@ void mystatus(const char *status)
 
 int main(int argc, const char *argv[])
 {
+   char *xidserver = getenv("CARDPRINTER");;
    const char *certfile = NULL;
    const char *keyfile = NULL;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
-#ifndef	XIDSERVER
          { "xidserver", 'S', POPT_ARG_STRING, &xidserver, 0, "Send to xidserver", "hostname" },
-#endif
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL client key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL client cert file", "filename" },
          { "loaded", 'L', POPT_ARG_NONE, &loaded, 0, "Expect card to be loaded" },
@@ -400,7 +394,7 @@ int main(int argc, const char *argv[])
       j_delete(&j);
    }
 
-   if (xidserver)
+   if (!preview && xidserver)
    {
       ajl_t i,
        o;

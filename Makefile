@@ -1,4 +1,4 @@
-TARGETS=xidsvg printsvg cardart matica xidserver xidsvg.o
+TARGETS=xidsvg xidserver xidsvg.o
 
 all: ${TARGETS}
 clean:
@@ -18,20 +18,11 @@ AJL/ajl.c:
 AJL/ajl.o: AJL/ajl.c AJL
 	make -C AJL ajl.o
 
-matica: matica.c AXL/axl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o -lcurl
-
-printsvg: printsvg.c AXL/axl.o AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl
-
 xidsvg: xidsvg.c AXL/axl.o AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl -pthread -lssl
 
 xidsvg.o: xidsvg.c AXL/axl.h AJL/ajl.h
 	cc -O -c -o $@ $< ${OPTS} -DLIB
-
-cardart: cardart.c AXL/axl.o
-	cc -O -o $@ $< ${OPTS} AXL/axl.o -lpopt -lcurl
 
 xidserver: xidserver.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
