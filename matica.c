@@ -33,6 +33,7 @@ int debug = 0;
 
 int main(int argc, const char *argv[])
 {
+   warnx("Deprecated code in use");
    int c;
    const char *printer = NULL;
    const char *portname = "9100";

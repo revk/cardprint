@@ -384,6 +384,7 @@ unsigned char *loadfile(const char *tag, const char *filename, int width, int he
 
 int main(int argc, const char *argv[])
 {
+   warnx("Deprecated code in use");
    int c;
    const char *c1file = NULL;
    const char *k1file = NULL;
