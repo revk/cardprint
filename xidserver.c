@@ -577,7 +577,6 @@ void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char 
 }
 
 // Printer specific settings
-unsigned char xid8600 = 0;      // Is an XID8600
 j_t j_new(void)
 {
    j_t j = j_create();
@@ -1109,6 +1108,8 @@ const char *client_tx(j_t j, ajl_t o)
    return NULL;
 }
 
+unsigned char xid8600 = 0;      // Is an XID8600
+unsigned char flip = 0;
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
@@ -1134,9 +1135,9 @@ char *job(const char *from)
          e--;
       type[e] = 0;
       if (!strcmp(type, "XID8600"))
-         xid8600 = 1;
+         flip = xid8600 = 1;
       else if (!strncmp(type, "XID580", 6))
-         xid8600 = 0;
+         flip = xid8600 = 0;
       else
          error = "Unknown printer type";
       dpi = (xid8600 ? 600 : 300);
@@ -1444,7 +1445,7 @@ char *job(const char *from)
                               int x = c + dx;
                               if (x >= 0 && x < cols)
                               {
-                                 int o = (rows - 1 - y) * cols + (cols - 1 - x);
+                                 int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
                                  png_bytep p = image + 3 * c;
                                  data[2][o] = *p++ ^ 0xFF;
                                  data[1][o] = *p++ ^ 0xFF;
@@ -1479,7 +1480,7 @@ char *job(const char *from)
                               int x = c + dx;
                               if (x >= 0 && x < cols)
                               {
-                                 int o = (rows - 1 - y) * cols + (cols - 1 - x);
+                                 int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
                                  if (layer == 3)
                                     data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);    // Black
                                  else
