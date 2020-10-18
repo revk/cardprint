@@ -481,7 +481,7 @@ void card_check(void)
    {
       if (!readeric && strstr(p, "HID Global OMNIKEY 3x21 Smart Card Reader"))
          readeric = strdup(p);
-      else if (!readeric && strstr(p, "XIRING Teo"))
+      else if (!readeric && strstr(p, "Precise Biometrics Sense MC"))
          readeric = strdup(p);
       else if (!readerrfid && strstr(p, "OMNIKEY AG CardMan 5121"))
          readerrfid = strdup(p);
