@@ -1403,6 +1403,8 @@ char *job(const char *from)
                   if (debug)
                      warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag1, side, width, height, dx, dy, cols, rows);
                   png_set_expand(png_ptr);      // Expand palette, etc
+                  static const png_color_16 bg = { 255, 65535, 65535, 65535, 65535 };
+                  png_set_background(png_ptr, &bg, PNG_BACKGROUND_GAMMA_FILE, 0, 1.0);
                   png_set_strip_16(png_ptr);    // Reduce to 8 bit
                   png_set_packing(png_ptr);     // Unpack
                   if (layer)
