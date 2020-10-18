@@ -314,7 +314,7 @@ const setting_t settings[] = {
 const setting_t info[] = {
    { 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
    { 0x0e, "ink-capacity", NULL },
-   { 0x0a, "card-quantity", "exists//none" },
+   { 0x0a, "cards", "true//false" },
    { 0x0f, "ink-lot-number", NULL },
 };
 
