@@ -1,4 +1,4 @@
-TARGETS=xidsvg printsvg xidserver xidsvg.o
+TARGETS=xidsvg xidserver xidsvg.o
 
 all: ${TARGETS}
 clean:
@@ -17,9 +17,6 @@ AJL/ajl.c:
 
 AJL/ajl.o: AJL/ajl.c AJL
 	make -C AJL ajl.o
-
-printsvg: printsvg.c AXL/axl.o AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl
 
 xidsvg: xidsvg.c AXL/axl.o AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -lpopt AXL/axl.o AJL/ajl.o -lcurl -pthread -lssl
