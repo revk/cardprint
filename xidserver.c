@@ -38,7 +38,8 @@
 //      F2 03   Document info
 //      F0 00 01   Command
 //      F0 00 02   Load image
-//      F0 00 04   Get Settings (send set of setting words with 000000)
+//      F0 00 04   Get Settings
+//      F0 00 05   Get info
 //      F0 00 06   Check status
 //      FO 00 08   Change settings (send set of new settings works) - UDP...
 // 1:   is count of words from this point (i.e. total-1)
@@ -53,6 +54,7 @@
 //      F1 00 02   Command response, Not OK?
 //      F1 00 03   Command response, error?
 //      F1 00 04   Settings
+//      F1 00 05   Info
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is status/error (0=OK)
 // 3:   is sequence (normally echos request to which this is response)
@@ -112,6 +114,12 @@
    0000 0000 0000 0000 0106 04ff 02d0 0000	No card
 // f100 0600 0000 0004
    0000 0000 0000 0000 0106 0400 0000 0000	OK
+// Get info
+// f000 0600 0000 000d
+   0000 0000 0000 000a 0c00 0000 0a00 0000 0d00 0000 0b00 0000 0e00 0000 0f00 0000 1f00 0000 2000 0000 2100 0000 1e00 0000 2300 0000               
+// f100 0600 0000 001b
+   0000 0000 0000 000a 0c02 0108 0a02 0100 0d02 0100 0b02 0130 0e06 0203 e800 0000 0f22 2045 4833 3131 3100 0000 0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 1f06 0400 0000 7500 2006 0400 0002 f000 2106 0400 0000 7500 1e06 0400 0000 0a00 2306 0400 0000 0800
 // Check laminator status
 // f000 0600 0000 0003
    0000 0000 0000 0000 3e00 0000
@@ -186,18 +194,33 @@
    0000 0000 0000 0000 0a02 4000		// Contact / release
 // f000 0100 0000 0003
    0000 0000 0000 0000 0a02 5000		// No contact / release
+// Print info
+// f000 0500  [....+.+.Xp.....
+   0000 0012 0000 0000 0000 000a 0400 0000  ................
+   0500 0000 0600 0000 0700 0000 0800 0000  ................
+   0900 0000 0a00 0000 0b00 0000 3200 0000  ............2...
+   3300 0000 3600 0000 3700 0000 3800 0000  3...6...7...8...
+   3900 0000 3a00 0000 3b00 0000
+   f100 0500  [..H.+.+.xw+....
+   0000 001a 0000 0000 0000 000a 0406 0202  ................
+   5800 0000 0506 0202 5800 0000 0606 0207  X.......X.......
+   ea00 0000 0706 0204 fe00 0000 0806 0200  ................
+   0000 0000 0906 0200 0000 0000 0a06 0208  ................
+   1800 0000 0b06 0205 3000 0000 3202 0101  ........0...2...
+   3302 0100 3602 0100 3702 0101 3802 0101  3...6...7...8...
+   3902 0101 3a02 0100 3b02 0101   
 // Load image
    F0000200 000A7F25 00000000 00000005 01000000 0029FC84 0029FC80 00000000 ...
 // Settings UDP
-	f000 0400
-	0x0020:  0000 001d 0000 0000 0000 0000 4600 0000
-	0x0030:  4700 0000 4a00 0000 4b00 0000 5c00 0000
-	0x0040:  4c00 0000 4d00 0000 4e00 0000 5500 0000
-	0x0050:  5600 0000 4f00 0000 5000 0000 3300 0000
-	0x0060:  1400 0000 1600 0000 1800 0000 2a00 0000
-	0x0070:  2800 0000 4800 0000 1d00 0000 1e00 0000
-	0x0080:  1b00 0000 2900 0000 1f00 0000 5d00 0000
-	0x0090:  5e00 0000 5f00 0000
+   f000 0400
+   0000 001d 0000 0000 0000 0000 4600 0000
+   4700 0000 4a00 0000 4b00 0000 5c00 0000
+   4c00 0000 4d00 0000 4e00 0000 5500 0000
+   5600 0000 4f00 0000 5000 0000 3300 0000
+   1400 0000 1600 0000 1800 0000 2a00 0000
+   2800 0000 4800 0000 1d00 0000 1e00 0000
+   1b00 0000 2900 0000 1f00 0000 5d00 0000
+   5e00 0000 5f00 0000
 
 	// Looks like 4 bytes, starting with code and 00 00 00
 	// Response looks same with data in those three bytes
@@ -232,14 +255,31 @@
 	5e02 0100	Transfer speed back UV, 1=+1,2=0,3=-1,4=-2,5=-3
 	5f02 0100	Backside cool, 0=0ff, 1=On
 
+// Info
+// Similar request syntax
+// film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
+   0c02 0108		// film quantity (8=80%)
+   0a02 0100		// 0=exist, 2=non (card quantity)
+   0d02 0100		// 0=YMCK,4=YMCKK,5=YMCKU,254=Unknown
+   0b02 0130		// 30=48 (48=95%, 49=98%,40=80%,0=0%)
+   0e06 0203 e800 0000	// 03e8=1000 - total ink panels
+   0f22 2045 4833 3131 3100 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 // Ink Lot Number
+   1f06 0400 0000 7500	// 00000075=117
+   2006 0400 0002 f000	// 000002F0=753
+   2106 0400 0000 7500	// 00000075=117
+   1e06 0400 0000 0a00	// 0000000A=10
+   2306 0400 0000 0800	// 00000008=8
+
 */
 
 typedef struct setting_s setting_t;
-const struct setting_s {
+struct setting_s {
    unsigned char tag;
    const char *name;
    const char *vals;
-} settings[] = {
+};
+
+const setting_t settings[] = {
    { 0x14, "card-thickness", "standard//thin" },
    { 0x16, "buzzer", "true/false" },
    { 0x18, "hr-power-save", "//////45/60/false" },
@@ -270,6 +310,15 @@ const struct setting_s {
 };
 
 #define SETTINGS (sizeof(settings)/sizeof(*settings))
+
+const setting_t info[] = {
+   { 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
+   { 0x0e, "ink-capacity", NULL },
+   { 0x0a, "card-quantity", "exists//none" },
+   { 0x0f, "ink-lot-number", NULL },
+};
+
+#define INFO (sizeof(info)/sizeof(*info))
 
 // Loads of globals - single job at a time
 
@@ -732,11 +781,11 @@ const char *printer_rx(void)
 }
 
 const char *printer_start_cmd(unsigned int cmd);
-const char *printer_rx_check(ajl_t o, int ignore)
+const char *printer_rx_check(ajl_t o)
 {
    if (error)
       return error;
-   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && (!ignore || rxerr != 0x0002D000))
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && (!count || rxerr != 0x0002D000))
    {                            // Wait
       while (queue && !error)
          printer_rx();
@@ -767,7 +816,7 @@ const char *printer_rx_check(ajl_t o, int ignore)
          error = msg(rxerr);
       return error;
    }
-   if (!error && rxerr && (!ignore || rxerr != 0x0002D000))
+   if (!error && rxerr && (!count || rxerr != 0x0002D000))
       error = msg(rxerr);
    else
       printer_rx();
@@ -808,13 +857,13 @@ void printer_data(unsigned int len, const unsigned char *data)
    buflen += len;
 }
 
-const char *printer_tx_check(ajl_t o, int ignore)
+const char *printer_tx_check(ajl_t o)
 {                               // Send and check reply
    if (error)
       return error;
    printer_tx();
    while (queue && !error)
-      printer_rx_check(o, ignore);      // Catch up
+      printer_rx_check(o);      // Catch up
    return error;
 }
 
@@ -837,7 +886,7 @@ const char *printer_queue_cmd(unsigned int cmd)
 const char *printer_cmd(unsigned int cmd, ajl_t o)
 {                               // Simple command and response
    printer_start_cmd(cmd);
-   return printer_tx_check(o, 0);
+   return printer_tx_check(o);
 }
 
 const char *set_settings(j_t s, ajl_t o)
@@ -846,7 +895,7 @@ const char *set_settings(j_t s, ajl_t o)
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o, 1);
+      printer_rx_check(o);
    unsigned char data[SETTINGS * 4] = { };
    int p = 0;
    for (int i = 0; i < SETTINGS; i++)
@@ -886,67 +935,88 @@ const char *set_settings(j_t s, ajl_t o)
    return error;
 }
 
-const char *get_settings(j_t j, ajl_t o)
+const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, const setting_t * settings)
 {
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o, 1);
-   printer_start(0xF0000400, 0);
-   unsigned char data[SETTINGS * 4] = { };
-   for (int i = 0; i < SETTINGS; i++)
+      printer_rx_check(o);
+   printer_start(0xF0000000 + (req << 8), 0);
+   unsigned char data[N * 4];
+   for (int i = 0; i < N; i++)
+   {
       data[i * 4] = settings[i].tag;
-   printer_data(sizeof(data), data);
+      data[i * 4 + 1] = 0;
+      data[i * 4 + 2] = 0;
+      data[i * 4 + 3] = 0;
+   }
+   printer_data(N * 4, data);
    printer_tx();
    printer_rx();
-   if (buf[7] == (sizeof(data) + 3) / 4 + 2)
+   if (error)
+      return error;
+   j_t s = j_store_object(j, label);
+   unsigned char *p = buf + 16,
+       *e = buf + 8 + 4 * ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]);
+   while (p < e && *p)
    {
-      memcpy(data, buf + 16, sizeof(data));
-      j_t s = j_store_object(j, "settings");
-      for (int i = 0; i < SETTINGS; i++)
-         if (data[i * 4] == settings[i].tag && data[i * 4 + 1] == 2 && data[i * 4 + 2] == 1)
-         {
-            int n = data[i * 4 + 3];
-            const char *v = settings[i].vals;
-            while (n--)
-            {
-               while (*v && *v != '/')
-                  v++;
-               if (*v)
-                  v++;
+      if (p[1] > 1)
+         for (int i = 0; i < N; i++)
+            if (*p == settings[i].tag)
+            {                   // Simple number
+               if (p[2] <= 4)
+               {                // Number
+                  long long n = 0;
+                  for (int q = 0; q < p[2]; q++)
+                     n = (n << 8) + p[3 + q];
+                  const char *v = settings[i].vals;
+                  if (v)
+                  {
+                     while (n--)
+                     {
+                        while (*v && *v != '/')
+                           v++;
+                        if (*v)
+                           v++;
+                     }
+                     const char *e = v;
+                     while (*e && *e != '/')
+                        e++;
+                     if (e > v)
+                     {
+                        if (isdigit(*v) || *v == '-')
+                           j_store_int(s, settings[i].name, atoi(v));
+                        else if (e - v == 4 && !strncmp(v, "true", e - v))
+                           j_store_true(s, settings[i].name);
+                        else if (e - v == 5 && !strncmp(v, "false", e - v))
+                           j_store_false(s, settings[i].name);
+                        else
+                           j_store_stringn(s, settings[i].name, v, e - v);
+                     }
+                  } else
+                     j_store_int(s, settings[i].name, n);
+               } else
+                  j_store_string(s, settings[i].name, strndupa((char *) p + 3, p[2]));  // String
+               break;           // found
             }
-            const char *e = v;
-            while (*e && *e != '/')
-               e++;
-            if (e > v)
-            {
-               if (isdigit(*v) || *v == '-')
-                  j_store_int(s, settings[i].name, atoi(v));
-               else if (e - v == 4 && !strncmp(v, "true", e - v))
-                  j_store_true(s, settings[i].name);
-               else if (e - v == 5 && !strncmp(v, "false", e - v))
-                  j_store_false(s, settings[i].name);
-               else
-                  j_store_stringn(s, settings[i].name, v, e - v);
-            }
-         }
+      p += 2 + p[1];
    }
    return error;
 }
 
-const char *check_status(ajl_t o, int ignore)
+const char *check_status(ajl_t o)
 {
    if (error)
       return error;
    while (queue && !error)
-      printer_rx_check(o, ignore);
+      printer_rx_check(o);
    return printer_cmd(0x01020000, o);
 }
 
-const char *check_position(ajl_t o, int ignore)
+const char *check_position(ajl_t o)
 {
    while (queue && !error)
-      printer_rx_check(o, ignore);
+      printer_rx_check(o);
    if (error)
       return error;
    if (!printer_cmd(0x02020000, o))
@@ -961,7 +1031,7 @@ const char *check_position(ajl_t o, int ignore)
    return error;
 }
 
-const char *moveto(int newposn, ajl_t o, int ignore)
+const char *moveto(int newposn, ajl_t o)
 {
    if (error || posn == newposn)
       return error;             // Nothing to do
@@ -976,7 +1046,7 @@ const char *moveto(int newposn, ajl_t o, int ignore)
    }
    if (posn < 0)
    {                            // not in machine
-      check_status(o, ignore);
+      check_status(o);
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
@@ -1003,13 +1073,13 @@ const char *moveto(int newposn, ajl_t o, int ignore)
    if (posn == POS_IC)
    {
       printer_cmd(0x0A020000, o);       // Engage contacts
-      check_status(o, ignore);
+      check_status(o);
       if ((error = card_connect(readeric, o)))
          return error;
    } else if (posn == POS_RFID)
    {
       printer_cmd(0x0A021000, o);       // Engage RFID, not contacts
-      check_status(o, ignore);
+      check_status(o);
       if ((error = card_connect(readerrfid, o)))
          return error;
    }
@@ -1047,7 +1117,7 @@ char *job(const char *from)
    card_check();
    count = 0;
    printer_connect();
-   printer_rx_check(o, 0);
+   printer_rx_check(o);
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
    status = "Connected";
@@ -1102,11 +1172,12 @@ char *job(const char *from)
          };
          printer_data(sizeof(reply), reply);
       }
-      printer_tx_check(o, 0);
+      printer_tx_check(o);
    }
-   check_position(o, 0);
+   check_position(o);
    j_t j = j_new();
-   get_settings(j, o);
+   get_settings(j, o, 4, "settings", SETTINGS, settings);
+   get_settings(j, o, 6, "info", INFO, info);
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
    j_store_int(j, "rows", rows);
@@ -1117,14 +1188,14 @@ char *job(const char *from)
    if (rxerr)
       j_store_true(j, "wait");
    client_tx(j, o);
-   check_status(o, 0);
-   check_position(o, 0);
+   check_status(o);
+   check_position(o);
    if (posn >= 0)
    {
       if (debug)
          warnx("Unexpected card position %d", posn);
-      moveto(POS_REJECT, o, 1);
-      check_status(o, 1);
+      moveto(POS_REJECT, o);
+      check_status(o);
       if (debug)
          warnx("Rejected");
    }
@@ -1151,7 +1222,7 @@ char *job(const char *from)
          if (j_isobject(cmd))
             set_settings(cmd, o);
          j_t j = j_new();
-         get_settings(j, o);
+         get_settings(j, o, 4, "settings", SETTINGS, settings);
          client_tx(j, o);
       }
       if ((cmd = j_find(j, "mag")))
@@ -1192,11 +1263,11 @@ char *job(const char *from)
          {
             status = "Encoding";
             client_tx(j_new(), o);
-            moveto(POS_MAG, o, 0);
-            check_position(o, 0);
+            moveto(POS_MAG, o);
+            check_position(o);
             printer_start_cmd(0x09000000 + ((p + 2) << 16) + c);
             printer_data(p, temp);
-            printer_tx_check(o, 0);
+            printer_tx_check(o);
             status = "Encoded";
             client_tx(j_new(), o);
          }
@@ -1204,8 +1275,8 @@ char *job(const char *from)
          {                      // Read
             status = "Reading";
             client_tx(j_new(), o);
-            moveto(POS_MAG, o, 0);
-            check_position(o, 0);
+            moveto(POS_MAG, o);
+            check_position(o);
             // Load tacks separately as loading all at once causes error if any do not read
             void mread(j_t j, unsigned char tag) {
                char t = (tag >> 4) - 1;
@@ -1247,7 +1318,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "ic")))
       {
-         moveto(POS_IC, o, 0);
+         moveto(POS_IC, o);
          if (j_isstring(cmd))
          {
             unsigned char *tx = NULL;
@@ -1262,7 +1333,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "rfid")))
       {
-         moveto(POS_RFID, o, 0);
+         moveto(POS_RFID, o);
          if (j_isstring(cmd))
          {
             unsigned char *tx = NULL;
@@ -1277,7 +1348,7 @@ char *job(const char *from)
       }
       if ((cmd = j_find(j, "mifare")))
       {
-         moveto(POS_RFID, o, 0);
+         moveto(POS_RFID, o);
          // TODO
       }
       if (print)
@@ -1440,7 +1511,7 @@ char *job(const char *from)
             add("U", "UV", 6);
             if (found)
             {
-               moveto(POS_PRINT, o, 0); // ready to print
+               moveto(POS_PRINT, o);    // ready to print
                if (side)
                {
                   status = "Second side";
@@ -1473,7 +1544,7 @@ char *job(const char *from)
                      printer_tx();
                      printed |= (1 << p);
                      while (queue > 3 && !error)
-                        printer_rx_check(o, 0);
+                        printer_rx_check(o);
                   }
                if (printed)
                {
@@ -1497,7 +1568,7 @@ char *job(const char *from)
                      }
                   }
                }
-               check_status(o, 0);
+               check_status(o);
             }
             for (int i = 0; i < 8; i++)
                if (data[i])
@@ -1512,40 +1583,41 @@ char *job(const char *from)
             print_side(j_index(print, 0));
             print_side(j_index(print, 1));
          }
+         if (printed)
+            count++;
          while (queue && !error)
-            printer_rx_check(o, 1);
+            printer_rx_check(o);
          if (printed)
          {
             status = "Transfer";
             client_tx(j_new(), o);
             printer_cmd(0x07020000 + (posn = POS_EJECT), o);
             status = "Printed";
-            count++;
          } else
          {
-            moveto(POS_EJECT, o, 1);    // Done anyway
+            moveto(POS_EJECT, o);       // Done anyway
             status = "Unprinted";
          }
-         check_status(o, 1);
-         check_position(o, 1);
+         check_status(o);
+         check_position(o);
          client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "reject")))
       {
-         moveto(POS_REJECT, o, 1);
-         check_status(o, 1);
-         check_position(o, 1);
+         moveto(POS_REJECT, o);
+         check_status(o);
+         check_position(o);
          client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
-         moveto(POS_EJECT, o, 1);
-         check_status(o, 1);
-         check_position(o, 1);
+         moveto(POS_EJECT, o);
+         check_status(o);
+         check_position(o);
          client_tx(j_new(), o);
          break;
       }
-      check_position(o, 0);
+      check_position(o);
       client_tx(j_new(), o);
    }
    j_delete(&j);
