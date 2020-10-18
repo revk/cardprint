@@ -394,7 +394,7 @@ int main(int argc, const char *argv[])
       j_delete(&j);
    }
 
-   if (xidserver)
+   if (!preview && xidserver)
    {
       ajl_t i,
        o;
