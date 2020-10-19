@@ -277,6 +277,7 @@ struct setting_s {
    unsigned char tag;
    const char *name;
    const char *vals;
+   int mul;
 };
 
 const setting_t settings[] = {
@@ -313,9 +314,11 @@ const setting_t settings[] = {
 
 const setting_t info[] = {
    { 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
-   { 0x0e, "ink-capacity", NULL },
-   { 0x0a, "cards", "true//false" },
    { 0x0f, "ink-lot-number", NULL },
+   { 0x0b, "ink-available", NULL, 2 },
+   { 0x0e, "ink-total", NULL },
+   { 0x0c, "transfer-available", NULL, 10 },
+   { 0x0a, "cards-available", "true//false" },
 };
 
 #define INFO (sizeof(info)/sizeof(*info))
@@ -968,6 +971,8 @@ const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, cons
                   long long n = 0;
                   for (int q = 0; q < p[2]; q++)
                      n = (n << 8) + p[3 + q];
+                  if (settings[i].mul)
+                     n *= settings[i].mul;
                   const char *v = settings[i].vals;
                   if (v)
                   {
