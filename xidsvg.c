@@ -165,16 +165,6 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
                status("*SVG conversion fail");
          }
    j_t j = j_create();
-   char *mag1 = xml_get(svg, "@track1");
-   char *mag2 = xml_get(svg, "@track2");
-   char *mag3 = xml_get(svg, "@track3");
-   if (mag1 || mag2 || mag3)
-   {
-      j_t m = j_store_array(j, "mag");
-      j_append_string(m, mag1);
-      j_append_string(m, mag2);
-      j_append_string(m, mag3);
-   }
    j_t p = j_store_array(j, "print");
    unsigned char *panel = malloc(cols * rows);
    for (int side = 0; side < 2; side++)
