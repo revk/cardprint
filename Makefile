@@ -1,4 +1,4 @@
-TARGETS=xidsvg xidserver xidsvg.o
+TARGETS=xidsvg xidserver xidsvg.o mifare
 
 all: ${TARGETS}
 clean:
@@ -25,5 +25,7 @@ xidsvg.o: xidsvg.c AXL/axl.h AJL/ajl.h
 	cc -O -c -o $@ $< ${OPTS} -DLIB
 
 xidserver: xidserver.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
+	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite
 
+mifare: mifare.c AJL/ajl.o
+	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
