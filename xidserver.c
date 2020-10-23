@@ -1275,7 +1275,12 @@ char *job(const char *from)
             printer_data(p, temp);
             printer_tx_check(o);
             status = "Encoded";
-            client_tx(j_new(), o);
+            if (!(j_isnull(cmd) || j_istrue(cmd)))
+            {                   // Not reading, so confirm write OK
+               j_t j = j_new();
+               j_store_boolean(j, "mag", rxerr ? 0 : 1);
+               client_tx(j, o);
+            }
          }
          if (j_isnull(cmd) || j_istrue(cmd))
          {                      // Read
