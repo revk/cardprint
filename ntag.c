@@ -103,24 +103,46 @@ int main(int argc, const char *argv[])
          errx(1, "Bad rx");
       return rx[rxlen - 2];
    }
-   size_t l;
-   unsigned char *data;
    if (cardwrite)
-   {
-      l = j_based(cardwrite, &data, JBASE16, 4);
-      if (l < 0 || l > 16)
-         errx(1, "Bad write data");
-      txlen = 0;
-      tx[txlen++] = 0xFF;       // Pseudo ADPU
-      tx[txlen++] = 0xD6;       // Write binary
-      tx[txlen++] = 0x00;       // Address
-      tx[txlen++] = 0x00;
-      tx[txlen++] = l;          // Len
-      memcpy(tx + txlen, data, l);
-      txlen += l;
-      free(data);
-      if ((txn() >> 4) != 9)
-         errx(1, "Failed write %02X %02X", rx[0], rx[1]);
+   {                            // Make it simple, assume we can fit this in small data
+      unsigned char data[1000];
+      int p = 0,
+          l = strlen(cardwrite);;
+      data[p++] = 0x03;         // NDEF
+      p++;                      // skip length for now
+      data[p++] = 0xD1;         // MB, ME, SR, Well-known
+      data[p++] = 0x01;         // Type len
+      if (l + 1 > 255)
+         errx(1, "Too long");
+      data[p++] = l + 1;        // Payload len (1 byte prefix)
+      data[p++] = 'U';          // Type URI
+      data[p++] = 0x00;         // No prefix
+      memcpy(data + p, cardwrite, l);
+      p += l;
+      if (p - 2 > 254)
+         errx(1, "Too long");
+      data[1] = p - 2;
+      data[p++] = 0xFE;         // End
+      int q = 0;
+      while (q < p)
+      {
+         int d = p - q;
+         if (d > 16)
+            d = 16;
+         txlen = 0;
+         tx[txlen++] = 0xFF;    // Pseudo ADPU
+         tx[txlen++] = 0xD6;    // Write binary
+         tx[txlen++] = ((q + 16) >> 10);        // Address of 4 byte block
+         tx[txlen++] = ((q + 16) >> 2);
+         tx[txlen++] = 16;      // Len
+         memcpy(tx + txlen, data + q, d);
+         if (d < 16)
+            memset(tx + txlen + d, 0, 16 - d);
+         txlen += 16;
+         if ((txn() >> 4) != 9)
+            errx(1, "Failed write %02X %02X", rx[0], rx[1]);
+         q += d;
+      }
    }
    if (cardread)
    {
@@ -133,11 +155,11 @@ int main(int argc, const char *argv[])
       if ((txn() >> 4) != 9)
          errx(1, "Failed read %02X %02X", rx[0], rx[1]);
       printf("%s\n", j_base16(rxlen - 2, rx));
-      tx[3]+=4;
+      tx[3] += 4;
       if ((txn() >> 4) != 9)
          errx(1, "Failed read %02X %02X", rx[0], rx[1]);
       printf("%s\n", j_base16(rxlen - 2, rx));
-      tx[3]+=4;
+      tx[3] += 4;
       if ((txn() >> 4) != 9)
          errx(1, "Failed read %02X %02X", rx[0], rx[1]);
       printf("%s\n", j_base16(rxlen - 2, rx));
