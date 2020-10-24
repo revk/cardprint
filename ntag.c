@@ -1,6 +1,6 @@
 // NTAG test code
 // Copyright © Adrian Kennard, Andrews & Arnold Ltd
-// Intended to help us understand NTAG cards
+// Intended to help us understand NTAG
 
 #include <stdio.h>
 #include <string.h>
@@ -15,16 +15,23 @@
 #include <ajl.h>
 
 // Notes see https://pcscworkgroup.com/specifications/download/
+// Notes on NDEF
+// Data from block 4 is a tag value
+// Tag 00 is nothing, FE if end, 03 is NDEF, followed by length and data, length 00-FE, of FFnnnn
+// In the NDEF blocks are multiple related NDEF records
 
 int main(int argc, const char *argv[])
 {
    int debug = 0;
    const char *reader = NULL;
    const char *cardwrite = NULL;
+   const char *cardkey = "FFFFFFFFFFFF";
    int cardread = 0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
+         { "reader", 'R', POPT_ARG_STRING, &reader, 0, "Which reader", "Name" },
+         { "key", 'k', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &cardkey, 0, "Key", "Hex" },
          { "write", 'w', POPT_ARG_STRING, &cardwrite, 0, "Write block", "Hex" },
          { "read", 'r', POPT_ARG_NONE, &cardread, 0, "Read block" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
@@ -96,7 +103,45 @@ int main(int argc, const char *argv[])
          errx(1, "Bad rx");
       return rx[rxlen - 2];
    }
-
+   size_t l;
+   unsigned char *data;
+   if (cardwrite)
+   {
+      l = j_based(cardwrite, &data, JBASE16, 4);
+      if (l < 0 || l > 16)
+         errx(1, "Bad write data");
+      txlen = 0;
+      tx[txlen++] = 0xFF;       // Pseudo ADPU
+      tx[txlen++] = 0xD6;       // Write binary
+      tx[txlen++] = 0x00;       // Address
+      tx[txlen++] = 0x00;
+      tx[txlen++] = l;          // Len
+      memcpy(tx + txlen, data, l);
+      txlen += l;
+      free(data);
+      if ((txn() >> 4) != 9)
+         errx(1, "Failed write %02X %02X", rx[0], rx[1]);
+   }
+   if (cardread)
+   {
+      txlen = 0;
+      tx[txlen++] = 0xFF;       // Pseudo ADPU
+      tx[txlen++] = 0xB0;       // Write binary
+      tx[txlen++] = 0x00;       // Address
+      tx[txlen++] = 0x00;
+      tx[txlen++] = 0x00;       // Len (all)
+      if ((txn() >> 4) != 9)
+         errx(1, "Failed read %02X %02X", rx[0], rx[1]);
+      printf("%s\n", j_base16(rxlen - 2, rx));
+      tx[3]+=4;
+      if ((txn() >> 4) != 9)
+         errx(1, "Failed read %02X %02X", rx[0], rx[1]);
+      printf("%s\n", j_base16(rxlen - 2, rx));
+      tx[3]+=4;
+      if ((txn() >> 4) != 9)
+         errx(1, "Failed read %02X %02X", rx[0], rx[1]);
+      printf("%s\n", j_base16(rxlen - 2, rx));
+   }
 
    if ((res = SCardReleaseContext(cardctx)) != SCARD_S_SUCCESS)
       errx(1, "Cant release context: %s", pcsc_stringify_error(res));
