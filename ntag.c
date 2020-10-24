@@ -20,6 +20,10 @@
 // Tag 00 is nothing, FE if end, 03 is NDEF, followed by length and data, length 00-FE, of FFnnnn
 // In the NDEF blocks are multiple related NDEF records
 
+const char *prefix[] =
+    { "http://www.", "https://www.", "http://", "https://", "tel:", "mailto:", "ftp://anonymous:anonymous@", "ftp://ftp.", "ftps://", "sftp://", "smb://", "nfs://", "ftp://", "dav://", "news:", "telnet://", "imap:", "rtsp://", "urn:", "pop:", "sip:", "sips:", "tftp:", "btspp://", "btl2cap://", "btgoep://",
+"tcpobex://", "irdaobex://", "file://", "urn:epc:id:", "urn:epc:tag:", "urn:epc:pat:", "urn:epc:raw:", "urn:epc:", "urn:nfc:" };
+
 int main(int argc, const char *argv[])
 {
    int debug = 0;
@@ -112,11 +116,17 @@ int main(int argc, const char *argv[])
       p++;                      // skip length for now
       data[p++] = 0xD1;         // MB, ME, SR, Well-known
       data[p++] = 0x01;         // Type len
+      int tag;
+      for (tag = 0; tag < sizeof(prefix) / sizeof(*prefix) && strncmp(prefix[tag], cardwrite, strlen(prefix[tag])); tag++);
+      if (tag < sizeof(prefix) / sizeof(*prefix))
+         l = strlen(cardwrite += strlen(prefix[tag++]));
+      else
+         tag = 0;
       if (l + 1 > 255)
          errx(1, "Too long");
       data[p++] = l + 1;        // Payload len (1 byte prefix)
       data[p++] = 'U';          // Type URI
-      data[p++] = 0x00;         // No prefix
+      data[p++] = tag;
       memcpy(data + p, cardwrite, l);
       p += l;
       if (p - 2 > 254)
