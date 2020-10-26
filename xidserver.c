@@ -1058,7 +1058,7 @@ const char *moveto(int newposn, ajl_t o)
       else
       {
          status = "Load card";
-         printer_queue_cmd(0x04020000 + newposn + (!newposn ? 0x80 : 0));     // Load
+         printer_queue_cmd(0x04020000 + newposn); // Load
       }
    } else if (newposn >= 0)
    {
@@ -1070,7 +1070,7 @@ const char *moveto(int newposn, ajl_t o)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      printer_queue_cmd(0x05020000 + newposn + (!newposn ? 0x80 : 0));        // Move
+      printer_queue_cmd(0x05020000 + newposn); // Move
    }
    posn = newposn;
    if (posn == POS_IC)
