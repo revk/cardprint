@@ -1042,11 +1042,11 @@ const char *moveto(int newposn, ajl_t o)
    if (posn == POS_IC)
    {
       card_disconnect();
-      printer_queue_cmd(0x0A024000);    // Disengage stations
+      printer_queue_cmd(0x0A024000);    // Disengage contacts
    } else if (posn == POS_RFID)
    {
       card_disconnect();
-      printer_queue_cmd(0x0A025000);    // Disengage stations
+      printer_queue_cmd(0x0A025000);    // Disengage contactless
    }
    if (posn < 0)
    {                            // not in machine
@@ -1081,7 +1081,7 @@ const char *moveto(int newposn, ajl_t o)
          return error;
    } else if (posn == POS_RFID)
    {
-      printer_cmd(0x0A021000, o);       // Engage RFID, not contacts
+      printer_cmd(0x0A021000, o);       // Engage contactless
       check_status(o);
       if ((error = card_connect(readerrfid, o)))
          return error;
