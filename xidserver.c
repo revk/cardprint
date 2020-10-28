@@ -1155,6 +1155,11 @@ char *job(const char *from)
    printer_rx_check(o);
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
+   if (error)
+   {
+      client_tx(j_new(), o);
+      return strdup(error);
+   }
    status = "Connected";
    char type[17] = { };
    if (!error)
