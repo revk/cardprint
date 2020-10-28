@@ -41,8 +41,8 @@
 //      F0 00 04   Get Settings
 //      F0 00 05   Get info
 //      F0 00 06   Check status
-//      F0 00 08   Change settings (send set of new settings) - does not seem to work?
-//      F0 00 0A   Get settings not NV?
+//      F0 00 08   Change settings (send set of new settings) - does not seem to work via TCP?
+//      F0 00 0A   Get settings non NV?
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is a parameter of some sort, usually 0
 // 3:   is sequence
