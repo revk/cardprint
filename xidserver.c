@@ -260,8 +260,17 @@
 // Similar request syntax
 // film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
    010e 0a... 		// Printer name
-   0c02 0108		// film quantity (8=80%)
+   0202 0100		// ?
+   0306 045b f0b0 c700	// IPv4 address
+   0406 04ff ffff 0000	// IPv4 subnet
+   0506 04c0 a800 0100	// IPv4 fixed
+   0602 0100		// ?
+   0702 0100		// ?
+   0802 0100		// ?
+   0902 0100		// ?
    0a02 0100		// 0=exist, 2=non (card quantity)
+   0b02 0140		// ?
+   0c02 0108		// film quantity (8=80%)
    0d02 0100		// 0=YMCK,4=YMCKK,5=YMCKU,254=Unknown
    0b02 0130		// 30=48 (48=95%, 49=98%,40=80%,0=0%)
    0e06 0203 e800 0000	// 03e8=1000 - total ink panels
