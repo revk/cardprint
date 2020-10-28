@@ -787,17 +787,16 @@ const char *printer_rx_check(ajl_t o)
 {
    if (error)
       return error;
-   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && (!count || rxerr != 0x0002D000))
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && rxerr != 0x0002D000)
    {                            // Wait
       while (queue && !error)
          printer_rx();
       if (error)
          return error;
-      time_t giveup = time(0) + 300;
       time_t update = 0;
       time_t now = 0;
       int last = 0;
-      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && (now = time(0)) < giveup)
+      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && rxerr != 0x0002D000)
       {
          if (rxerr != last || now > update)
          {
@@ -818,7 +817,7 @@ const char *printer_rx_check(ajl_t o)
          error = msg(rxerr);
       return error;
    }
-   if (!error && rxerr && (!count || rxerr != 0x0002D000))
+   if (!error && rxerr && rxerr != 0x0002D000)
       error = msg(rxerr);
    else
       printer_rx();
@@ -1051,15 +1050,26 @@ const char *moveto(int newposn, ajl_t o)
    if (posn < 0)
    {                            // not in machine
       check_status(o);
+      if (rxerr == 0x0002D000)
+      {                         // Need cards!
+         status = "No cards";
+         client_tx(j_new(), o);
+         while (rxerr == 0x0002D000)
+         {
+            usleep(100000);
+            check_status(o);
+         }
+      }
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
          error = "Cannot reject card, not loaded";
       else
       {
-         status = "Load card";
-         printer_queue_cmd(0x04020000 + newposn); // Load
+         status = "Loading card";
+         printer_queue_cmd(0x04020000 + newposn);       // Load
       }
+      client_tx(j_new(), o);
    } else if (newposn >= 0)
    {
       if (newposn == POS_PRINT)
@@ -1070,7 +1080,7 @@ const char *moveto(int newposn, ajl_t o)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      printer_queue_cmd(0x05020000 + newposn); // Move
+      printer_queue_cmd(0x05020000 + newposn);  // Move
    }
    posn = newposn;
    if (posn == POS_IC)
@@ -1204,7 +1214,6 @@ char *job(const char *from)
       if (debug)
          warnx("Rejected");
    }
-
 
    ajl_t i = ajl_read_func(ss_read_func, ss);
    // Handle messages both ways
@@ -1640,6 +1649,12 @@ char *job(const char *from)
    j_delete(&j);
    if (!ers && error)
       ers = strdup(error);
+   if (ers)
+   {
+      error = NULL;
+      moveto(POS_REJECT, o);
+      sleep(5);
+   }
    printer_disconnect();
    ajl_delete(&i);
    ajl_delete(&o);
