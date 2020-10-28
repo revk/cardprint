@@ -29,7 +29,6 @@
 #include <ajlparse.h>
 #include <png.h>
 
-
 // Protocol notes
 // TCP 50730
 // Ethernet send/rx blocks consisting of sequence of 4 byte words
@@ -41,7 +40,8 @@
 //      F0 00 04   Get Settings
 //      F0 00 05   Get info
 //      F0 00 06   Check status
-//      FO 00 08   Change settings (send set of new settings works) - UDP...
+//      F0 00 08   Change settings (send set of new settings) - does not seem to work via TCP?
+//      F0 00 0A   Get settings non NV?
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is a parameter of some sort, usually 0
 // 3:   is sequence
@@ -258,8 +258,18 @@
 // Info
 // Similar request syntax
 // film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
-   0c02 0108		// film quantity (8=80%)
+   010e 0a... 		// Printer name
+   0202 0100		// ? Possibly 1=USB
+   0306 045b f0b0 c700	// IPv4 address
+   0406 04ff ffff 0000	// IPv4 subnet
+   0506 04c0 a800 0100	// IPv4 fixed
+   0602 0100		// ?
+   0702 0100		// ?
+   0802 0100		// ?
+   0902 0100		// ?
    0a02 0100		// 0=exist, 2=non (card quantity)
+   0b02 0140		// ?
+   0c02 0108		// film quantity (8=80%)
    0d02 0100		// 0=YMCK,4=YMCKK,5=YMCKU,254=Unknown
    0b02 0130		// 30=48 (48=95%, 49=98%,40=80%,0=0%)
    0e06 0203 e800 0000	// 03e8=1000 - total ink panels
@@ -281,6 +291,8 @@ struct setting_s {
 };
 
 const setting_t settings[] = {
+   { 0x01, "name", NULL },
+   //{ 0x02, "connect", "Auto/USB" },
    { 0x14, "card-thickness", "standard//thin" },
    { 0x16, "buzzer", "true/false" },
    { 0x18, "hr-power-save", "//////45/60/false" },
@@ -421,15 +433,14 @@ static const char *msg(unsigned int e)
 int debug = 0;                  // Top level debug
 const char *printhost = NULL;   // Printer host/IP
 const char *printport = "50730";        // Printer port (this is default for XID8600)
+const char *printudp = "50731"; // Printer UDP port
 const char *keyfile = NULL;     // SSL
 const char *certfile = NULL;
 
-// Current connectionns
+// Current connections
 SSL *ss;                        // SSL client connection
-libusb_device_handle *usbhandle = NULL;
-const char usbmanufacturer[] = "G-Printec, Inc.";
-const char usbproduct[] = "Card Printer";
 int psock = -1;                 // Connected printer (ethernet)
+int usock = -1;                 // UDP connection to printer
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
 unsigned int bufmax = 0;        // Max buffer space malloc'd
@@ -601,6 +612,37 @@ j_t j_new(void)
    return j;
 }
 
+const char *printer_udp(void)
+{                               // Set up UDP connect
+   if (usock >= 0)
+      return NULL;
+ const struct addrinfo hints = { ai_family: AF_INET, ai_socktype:SOCK_DGRAM };
+   int e;
+   struct addrinfo *res = NULL,
+       *a;
+   if ((e = getaddrinfo(printhost, printudp, &hints, &res)))
+      errx(1, "getaddrinfo: %s", gai_strerror(e));
+   if (!res)
+      return "Cannot find printer";
+   for (a = res; a; a = a->ai_next)
+   {
+      int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+      if (s >= 0)
+      {
+         if (!connect(s, a->ai_addr, a->ai_addrlen))
+         {
+            usock = s;
+            break;
+         }
+         close(s);
+      }
+   }
+   freeaddrinfo(res);
+   if (usock < 0)
+      return error = "Could not connect to printer (UDP)";
+   return NULL;
+}
+
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
    posn = POS_UNKNOWN;
@@ -609,38 +651,6 @@ const char *printer_connect(void)
    status = "Connecting";
    seq = 0x99999999;
    txcmd = rxcmd = rxerr = 0;
-   if (!printhost)
-   {
-      if (usbhandle)
-         return error = "Printer already connected";
-      if (libusb_init(NULL) < 0)
-         return error = "USB init fail";
-      libusb_device **devs;
-      ssize_t cnt = libusb_get_device_list(NULL, &devs);
-      if (cnt < 0)
-         return error = "USB failed";
-      for (int i = 0; i < cnt; i++)
-      {
-         struct libusb_device_descriptor desc;
-         if (libusb_get_device_descriptor(devs[i], &desc) < 0)
-            continue;
-         unsigned char string[256];
-         libusb_open(devs[i], &usbhandle);
-         if (!usbhandle)
-            continue;
-         if (desc.iManufacturer && libusb_get_string_descriptor_ascii(usbhandle, desc.iManufacturer, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbmanufacturer) &&
-             desc.iProduct && libusb_get_string_descriptor_ascii(usbhandle, desc.iProduct, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbproduct))
-            break;
-         libusb_close(usbhandle);
-         usbhandle = NULL;
-      }
-      if (!usbhandle)
-      {
-         libusb_exit(NULL);
-         return error = "USB Printer not found";
-      }
-      return NULL;
-   }
    if (psock >= 0)
       return error = "Printer already connected";
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
@@ -670,14 +680,6 @@ const char *printer_connect(void)
 
 const char *printer_disconnect(void)
 {                               // Disconnect from printer
-   if (!printhost)
-   {
-      if (!usbhandle)
-         return "Not connected";        // Not connected, that is OK
-      libusb_exit(NULL);
-      usbhandle = NULL;
-      return NULL;
-   }
    if (psock < 0)
       return "Not connected";   // Not connected, that is OK
    close(psock);
@@ -685,14 +687,81 @@ const char *printer_disconnect(void)
    return NULL;
 }
 
+const char *printer_tx_udp(void)
+{
+   if (error)
+      return error;
+   if (usock < 0)
+      return error = "Printer not connected (UDP)";
+   if (buflen < 16)
+      return "Bad tx";
+   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   buflen = (buflen + 3) / 4 * 4;
+   unsigned int n = buflen / 4 - 2;
+   buf[4] = (n >> 24);
+   buf[5] = (n >> 16);
+   buf[6] = (n >> 8);
+   buf[7] = (n);
+   if (debug)
+   {
+      fprintf(stderr, "TxU:");
+      int i = 0;
+      for (i = 0; i < buflen && i < 32 * 5 - 4; i++)
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
+      if (i < buflen)
+         fprintf(stderr, "... (%d)", buflen);
+      fprintf(stderr, "\n");
+   }
+   int l = send(usock, buf, buflen, 0);
+   if (l < 0)
+      err(1, "Tx fail");
+   return NULL;
+}
+
+const char *printer_rx_udp(void)
+{
+   if (error)
+      return error;
+   if (usock < 0)
+      return error = "Printer not connected (UDP)";
+   struct timeval timeout = { 1, 0 };
+   fd_set readfs;
+   FD_ZERO(&readfs);
+   FD_SET(usock, &readfs);
+   if (select(usock + 1, &readfs, NULL, NULL, &timeout) <= 0)
+      return NULL;
+   if (bufmax < 1024 && !(buf = realloc(buf, bufmax = 1024)))
+      errx(1, "malloc");
+   buflen = recv(usock, buf, bufmax, 0);
+   if (!buflen)
+      return error = "No reply from printer";
+   if (buflen < 0)
+      err(1, "Rx UDP fail");
+   if (debug)
+   {
+      fprintf(stderr, "RxU:");
+      int i = 0;
+      for (i = 0; i < buflen && i < 200; i++)
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
+      if (i < buflen)
+         fprintf(stderr, "... (%d)", buflen);
+      fprintf(stderr, "\n");
+   }
+   if (buflen < 16)
+      return "Bad rx length";
+   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
+   return NULL;
+}
+
 const char *printer_tx(void)
 {                               // Raw printer send
    if (error)
       return error;
-   if (!usbhandle && psock < 0)
-      return "Printer not connected";
+   if (psock < 0)
+      return error = "Printer not connected";
    if (buflen < 16)
-      return "Bad tx";
+      return error = "Bad tx";
    queue++;
    txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    buflen = (buflen + 3) / 4 * 4;
@@ -715,12 +784,7 @@ const char *printer_tx(void)
    while (n < buflen)
    {
       int l = 0;
-      if (psock < 0)
-         libusb_bulk_transfer(usbhandle, 0x81, buf + buflen, n - buflen, &l, 60000);
-      else
-         l = write(psock, buf + n, buflen - n);
-      if (usbhandle)
-         warnx("tx=%d", (int) l);
+      l = write(psock, buf + n, buflen - n);
       if (l <= 0)
       {
          warn("Tx %d", (int) l);
@@ -737,23 +801,16 @@ const char *printer_rx(void)
       queue--;
    if (error)
       return error;
-   if (!usbhandle && psock < 0)
+   if (psock < 0)
       rxcmd = 0;
    buflen = 0;
    unsigned int n = 8;
-   if (usbhandle)
-      n = 512;                  // TODO DEBUG
    while (buflen < n)
    {
       if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
          errx(1, "malloc");
       int l = 0;
-      if (psock < 0)
-         libusb_bulk_transfer(usbhandle, 0x02, buf + buflen, n - buflen, &l, 60000);
-      else
-         l = read(psock, buf + buflen, n - buflen);
-      if (usbhandle)
-         warnx("rx=%d", (int) l);
+      l = read(psock, buf + buflen, n - buflen);
       if (!l && !buflen)
          return "Printer disconnected link";
       if (l <= 0)
@@ -787,17 +844,16 @@ const char *printer_rx_check(ajl_t o)
 {
    if (error)
       return error;
-   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && (!count || rxerr != 0x0002D000))
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && rxerr != 0x0002D000)
    {                            // Wait
       while (queue && !error)
          printer_rx();
       if (error)
          return error;
-      time_t giveup = time(0) + 300;
       time_t update = 0;
       time_t now = 0;
       int last = 0;
-      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && (now = time(0)) < giveup)
+      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && rxerr != 0x0002D000)
       {
          if (rxerr != last || now > update)
          {
@@ -818,7 +874,7 @@ const char *printer_rx_check(ajl_t o)
          error = msg(rxerr);
       return error;
    }
-   if (!error && rxerr && (!count || rxerr != 0x0002D000))
+   if (!error && rxerr && rxerr != 0x0002D000)
       error = msg(rxerr);
    else
       printer_rx();
@@ -896,8 +952,6 @@ const char *set_settings(j_t s, ajl_t o)
    // TODO this seems to not work, maybe only works via UDP?
    if (error)
       return error;
-   while (queue && !error)
-      printer_rx_check(o);
    unsigned char data[SETTINGS * 4] = { };
    int p = 0;
    for (int i = 0; i < SETTINGS; i++)
@@ -932,8 +986,8 @@ const char *set_settings(j_t s, ajl_t o)
    }
    printer_start(0xF0000800, 0);
    printer_data(p, data);
-   printer_tx();
-   printer_rx();
+   printer_tx_udp();
+   printer_rx_udp();
    return error;
 }
 
@@ -941,8 +995,6 @@ const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, cons
 {
    if (error)
       return error;
-   while (queue && !error)
-      printer_rx_check(o);
    printer_start(0xF0000000 + (req << 8), 0);
    unsigned char data[N * 4];
    for (int i = 0; i < N; i++)
@@ -953,8 +1005,8 @@ const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, cons
       data[i * 4 + 3] = 0;
    }
    printer_data(N * 4, data);
-   printer_tx();
-   printer_rx();
+   printer_tx_udp();
+   printer_rx_udp();
    if (error)
       return error;
    j_t s = j_store_object(j, label);
@@ -1051,15 +1103,28 @@ const char *moveto(int newposn, ajl_t o)
    if (posn < 0)
    {                            // not in machine
       check_status(o);
+      if (rxerr == 0x0002D000)
+      {                         // Need cards!
+         j_t j = j_new();
+         j_store_string(j, "status", "No cards");
+         j_store_true(j, "wait");
+         client_tx(j, o);
+         while (rxerr == 0x0002D000)
+         {
+            usleep(100000);
+            check_status(o);
+         }
+      }
       if (newposn == POS_EJECT)
          error = "Cannot eject card, not loaded";
       else if (newposn == POS_REJECT)
          error = "Cannot reject card, not loaded";
       else
       {
-         status = "Load card";
-         printer_queue_cmd(0x04020000 + newposn); // Load
+         status = "Loading card";
+         printer_queue_cmd(0x04020000 + newposn);       // Load
       }
+      client_tx(j_new(), o);
    } else if (newposn >= 0)
    {
       if (newposn == POS_PRINT)
@@ -1070,7 +1135,7 @@ const char *moveto(int newposn, ajl_t o)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      printer_queue_cmd(0x05020000 + newposn); // Move
+      printer_queue_cmd(0x05020000 + newposn);  // Move
    }
    posn = newposn;
    if (posn == POS_IC)
@@ -1078,7 +1143,15 @@ const char *moveto(int newposn, ajl_t o)
       printer_cmd(0x0A020000, o);       // Engage contacts
       check_status(o);
       if ((error = card_connect(readeric, o)))
-         return error;
+      {
+         error = NULL;
+         printer_cmd(0x0A024000, o);    // Disengage stations
+         sleep(1);
+         printer_cmd(0x0A020000, o);    // Engage contacts
+         sleep(1);
+         if ((error = card_connect(readeric, o)))
+            return error;
+      }
    } else if (posn == POS_RFID)
    {
       printer_cmd(0x0A021000, o);       // Engage contactless
@@ -1117,22 +1190,27 @@ unsigned char flip = 0;
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
+   j_t j;
    ajl_t o = ajl_write_func(ss_write_func, ss);
    // Connect to printer, get answer back, report to client
    card_check();
    count = 0;
+   printer_udp();
    printer_connect();
    printer_rx_check(o);
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
+   if (error)
+   {
+      client_tx(j_new(), o);
+      return strdup(error);
+   }
    status = "Connected";
-   char id[13] = { };
    char type[17] = { };
    if (!error)
    {                            // Send printer info
       // Note IPv4 at 40
       // Note IPv6 at 72
-      strncpy(id, (char *) buf + 30, sizeof(id) - 1);
       strncpy(type, (char *) buf + 56, sizeof(type) - 1);
       int e = strlen(type);
       while (e && type[e - 1] == ' ')
@@ -1180,10 +1258,9 @@ char *job(const char *from)
       printer_tx_check(o);
    }
    check_position(o);
-   j_t j = j_new();
-   get_settings(j, o, 4, "settings", SETTINGS, settings);
+   j = j_new();
+   get_settings(j, o, 10, "settings", SETTINGS, settings);
    get_settings(j, o, 6, "info", INFO, info);
-   j_store_string(j, "id", id);
    j_store_string(j, "type", type);
    j_store_int(j, "rows", rows);
    j_store_int(j, "cols", cols);
@@ -1205,7 +1282,6 @@ char *job(const char *from)
          warnx("Rejected");
    }
 
-
    ajl_t i = ajl_read_func(ss_read_func, ss);
    // Handle messages both ways
    char *ers;
@@ -1224,10 +1300,22 @@ char *job(const char *from)
       j_t cmd = NULL;
       if ((cmd = j_find(j, "settings")))
       {
-         if (j_isobject(cmd))
-            set_settings(cmd, o);
          j_t j = j_new();
          get_settings(j, o, 4, "settings", SETTINGS, settings);
+         j_t s = j_find(j, "settings");
+         if (j_isobject(cmd))
+         {
+            j_t e = NULL;
+            for (e = j_first(cmd); e; e = j_next(cmd))
+               if (strcmp(j_get(s, j_name(e)) ? : "", j_val(e) ? : ""))
+                  break;
+            if (e)
+            {
+               set_settings(cmd, o);
+               j_null(j);
+               get_settings(j, o, 4, "settings", SETTINGS, settings);
+            }
+         }
          client_tx(j, o);
       }
       if ((cmd = j_find(j, "mag")))
@@ -1621,7 +1709,8 @@ char *job(const char *from)
          }
       } else if ((cmd = j_find(j, "reject")))
       {
-         moveto(POS_REJECT, o);
+         if (posn >= 0)
+            moveto(POS_REJECT, o);
          check_status(o);
          check_position(o);
          client_tx(j_new(), o);
@@ -1640,6 +1729,15 @@ char *job(const char *from)
    j_delete(&j);
    if (!ers && error)
       ers = strdup(error);
+   if (ers)
+   {
+      error = NULL;
+      if (posn >= 0)
+      {
+         moveto(POS_REJECT, o);
+         sleep(5);
+      }
+   }
    printer_disconnect();
    ajl_delete(&i);
    ajl_delete(&o);
@@ -1660,7 +1758,8 @@ int main(int argc, const char *argv[])
          { "host", 'h', POPT_ARG_STRING, &bindhost, 0, "Host to bind", "Host/IP" },
          { "port", 'p', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &port, 0, "Port to bind", "port" },
          { "printer", 'H', POPT_ARG_STRING, &printhost, 0, "Printer", "Host/IP" },
-         { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port", "port" },
+         { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port (TC)", "port" },
+         { "print-udp", 'U', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printudp, 0, "Printer port (UDP)", "port" },
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "listen", 'q', POPT_ARG_INT, &lqueue, 0, "Listen queue", "N" },
