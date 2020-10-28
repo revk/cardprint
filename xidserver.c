@@ -41,7 +41,8 @@
 //      F0 00 04   Get Settings
 //      F0 00 05   Get info
 //      F0 00 06   Check status
-//      FO 00 08   Change settings (send set of new settings works) - UDP...
+//      F0 00 08   Change settings (send set of new settings) - does not seem to work?
+//      F0 00 0A   Get settings not NV?
 // 1:   is count of words from this point (i.e. total-1)
 // 2:   is a parameter of some sort, usually 0
 // 3:   is sequence
@@ -1088,7 +1089,15 @@ const char *moveto(int newposn, ajl_t o)
       printer_cmd(0x0A020000, o);       // Engage contacts
       check_status(o);
       if ((error = card_connect(readeric, o)))
-         return error;
+      {
+         error = NULL;
+         printer_cmd(0x0A024000, o);    // Disengage stations
+         sleep(1);
+         printer_cmd(0x0A020000, o);    // Engage contacts
+         sleep(1);
+         if ((error = card_connect(readeric, o)))
+            return error;
+      }
    } else if (posn == POS_RFID)
    {
       printer_cmd(0x0A021000, o);       // Engage RFID, not contacts
@@ -1191,7 +1200,7 @@ char *job(const char *from)
    }
    check_position(o);
    j_t j = j_new();
-   get_settings(j, o, 4, "settings", SETTINGS, settings);
+   get_settings(j, o, 10, "settings", SETTINGS, settings);
    get_settings(j, o, 6, "info", INFO, info);
    j_store_string(j, "id", id);
    j_store_string(j, "type", type);
