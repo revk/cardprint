@@ -1105,8 +1105,10 @@ const char *moveto(int newposn, ajl_t o)
       check_status(o);
       if (rxerr == 0x0002D000)
       {                         // Need cards!
-         status = "No cards";
-         client_tx(j_new(), o);
+         j_t j = j_new();
+         j_store_string(j, "status", "No cards");
+         j_store_true(j, "wait");
+         client_tx(j, o);
          while (rxerr == 0x0002D000)
          {
             usleep(100000);
@@ -1298,10 +1300,22 @@ char *job(const char *from)
       j_t cmd = NULL;
       if ((cmd = j_find(j, "settings")))
       {
-         if (j_isobject(cmd))
-            set_settings(cmd, o);
          j_t j = j_new();
          get_settings(j, o, 4, "settings", SETTINGS, settings);
+         j_t s = j_find(j, "settings");
+         if (j_isobject(cmd))
+         {
+            j_t e = NULL;
+            for (e = j_first(cmd); e; e = j_next(cmd))
+               if (strcmp(j_get(s, j_name(e)) ? : "", j_val(e) ? : ""))
+                  break;
+            if (e)
+            {
+               set_settings(cmd, o);
+               j_null(j);
+               get_settings(j, o, 4, "settings", SETTINGS, settings);
+            }
+         }
          client_tx(j, o);
       }
       if ((cmd = j_find(j, "mag")))
