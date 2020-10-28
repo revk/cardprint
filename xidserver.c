@@ -737,18 +737,20 @@ const char *printer_rx_udp(void)
       return error = "No reply from printer";
    if (buflen < 0)
       err(1, "Rx UDP fail");
+   int n = ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]) * 4 + 8;
    if (debug)
    {
       fprintf(stderr, "RxU:");
       int i = 0;
-      for (i = 0; i < buflen && i < 200; i++)
+      for (i = 0; i < buflen && i < 200 && i < n; i++)
          fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
-      if (i < buflen)
+      if (i < buflen && i < n)
          fprintf(stderr, "... (%d)", buflen);
       fprintf(stderr, "\n");
    }
-   if (buflen < 16)
+   if (buflen < 16 || buflen < n || n < 16)
       return "Bad rx length";
+   buflen = n;
    rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
    return NULL;
