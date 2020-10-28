@@ -872,7 +872,7 @@ const char *printer_rx_check(ajl_t o)
       }
       if (!rxerr)
          client_tx(j_new(), o);
-      if (!error && rxerr)
+      if (!error && rxerr && rxerr != 0x0002D000)
          error = msg(rxerr);
       return error;
    }
