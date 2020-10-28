@@ -292,7 +292,7 @@ struct setting_s {
 
 const setting_t settings[] = {
    { 0x01, "name", NULL },
-   { 0x02, "connect", "Auto/USB/Eth" }, // TODO not sure
+   //{ 0x02, "connect", "Auto/USB" },
    { 0x14, "card-thickness", "standard//thin" },
    { 0x16, "buzzer", "true/false" },
    { 0x18, "hr-power-save", "//////45/60/false" },
