@@ -29,8 +29,6 @@
 #include <ajlparse.h>
 #include <png.h>
 
-//#define       USBPRINT
-
 // Protocol notes
 // TCP 50730
 // Ethernet send/rx blocks consisting of sequence of 4 byte words
@@ -261,7 +259,7 @@
 // Similar request syntax
 // film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
    010e 0a... 		// Printer name
-   0202 0100		// ?
+   0202 0100		// ? Possibly 1=USB
    0306 045b f0b0 c700	// IPv4 address
    0406 04ff ffff 0000	// IPv4 subnet
    0506 04c0 a800 0100	// IPv4 fixed
@@ -294,6 +292,7 @@ struct setting_s {
 
 const setting_t settings[] = {
    { 0x01, "name", NULL },
+   { 0x02, "connect", "Auto/USB/Eth" }, // TODO not sure
    { 0x14, "card-thickness", "standard//thin" },
    { 0x16, "buzzer", "true/false" },
    { 0x18, "hr-power-save", "//////45/60/false" },
@@ -434,17 +433,14 @@ static const char *msg(unsigned int e)
 int debug = 0;                  // Top level debug
 const char *printhost = NULL;   // Printer host/IP
 const char *printport = "50730";        // Printer port (this is default for XID8600)
+const char *printudp = "50731"; // Printer UDP port
 const char *keyfile = NULL;     // SSL
 const char *certfile = NULL;
 
-// Current connectionns
+// Current connections
 SSL *ss;                        // SSL client connection
-#ifdef USBPRINT
-libusb_device_handle *usbhandle = NULL;
-const char usbmanufacturer[] = "G-Printec, Inc.";
-const char usbproduct[] = "Card Printer";
-#endif
 int psock = -1;                 // Connected printer (ethernet)
+int usock = -1;                 // UDP connection to printer
 unsigned char *buf = NULL;      // Printer message buffer
 unsigned int buflen = 0;        // Buffer length
 unsigned int bufmax = 0;        // Max buffer space malloc'd
@@ -616,6 +612,37 @@ j_t j_new(void)
    return j;
 }
 
+const char *printer_udp(void)
+{                               // Set up UDP connect
+   if (usock >= 0)
+      return NULL;
+ const struct addrinfo hints = { ai_family: AF_INET, ai_socktype:SOCK_DGRAM };
+   int e;
+   struct addrinfo *res = NULL,
+       *a;
+   if ((e = getaddrinfo(printhost, printudp, &hints, &res)))
+      errx(1, "getaddrinfo: %s", gai_strerror(e));
+   if (!res)
+      return "Cannot find printer";
+   for (a = res; a; a = a->ai_next)
+   {
+      int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+      if (s >= 0)
+      {
+         if (!connect(s, a->ai_addr, a->ai_addrlen))
+         {
+            usock = s;
+            break;
+         }
+         close(s);
+      }
+   }
+   freeaddrinfo(res);
+   if (usock < 0)
+      return error = "Could not connect to printer (UDP)";
+   return NULL;
+}
+
 const char *printer_connect(void)
 {                               // Connect to printer, return error if fail
    posn = POS_UNKNOWN;
@@ -624,40 +651,6 @@ const char *printer_connect(void)
    status = "Connecting";
    seq = 0x99999999;
    txcmd = rxcmd = rxerr = 0;
-#ifdef USBPRINT
-   if (!printhost)
-   {
-      if (usbhandle)
-         return error = "Printer already connected";
-      if (libusb_init(NULL) < 0)
-         return error = "USB init fail";
-      libusb_device **devs;
-      ssize_t cnt = libusb_get_device_list(NULL, &devs);
-      if (cnt < 0)
-         return error = "USB failed";
-      for (int i = 0; i < cnt; i++)
-      {
-         struct libusb_device_descriptor desc;
-         if (libusb_get_device_descriptor(devs[i], &desc) < 0)
-            continue;
-         unsigned char string[256];
-         libusb_open(devs[i], &usbhandle);
-         if (!usbhandle)
-            continue;
-         if (desc.iManufacturer && libusb_get_string_descriptor_ascii(usbhandle, desc.iManufacturer, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbmanufacturer) &&
-             desc.iProduct && libusb_get_string_descriptor_ascii(usbhandle, desc.iProduct, string, sizeof(string)) > 0 && !strcasecmp((char *) string, usbproduct))
-            break;
-         libusb_close(usbhandle);
-         usbhandle = NULL;
-      }
-      if (!usbhandle)
-      {
-         libusb_exit(NULL);
-         return error = "USB Printer not found";
-      }
-      return NULL;
-   }
-#endif
    if (psock >= 0)
       return error = "Printer already connected";
    struct addrinfo base = { 0, PF_UNSPEC, SOCK_STREAM };
@@ -687,16 +680,6 @@ const char *printer_connect(void)
 
 const char *printer_disconnect(void)
 {                               // Disconnect from printer
-#ifdef USBPRINT
-   if (!printhost)
-   {
-      if (!usbhandle)
-         return "Not connected";        // Not connected, that is OK
-      libusb_exit(NULL);
-      usbhandle = NULL;
-      return NULL;
-   }
-#endif
    if (psock < 0)
       return "Not connected";   // Not connected, that is OK
    close(psock);
@@ -704,18 +687,81 @@ const char *printer_disconnect(void)
    return NULL;
 }
 
+const char *printer_tx_udp(void)
+{
+   if (error)
+      return error;
+   if (usock < 0)
+      return error = "Printer not connected (UDP)";
+   if (buflen < 16)
+      return "Bad tx";
+   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   buflen = (buflen + 3) / 4 * 4;
+   unsigned int n = buflen / 4 - 2;
+   buf[4] = (n >> 24);
+   buf[5] = (n >> 16);
+   buf[6] = (n >> 8);
+   buf[7] = (n);
+   if (debug)
+   {
+      fprintf(stderr, "TxU:");
+      int i = 0;
+      for (i = 0; i < buflen && i < 32 * 5 - 4; i++)
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
+      if (i < buflen)
+         fprintf(stderr, "... (%d)", buflen);
+      fprintf(stderr, "\n");
+   }
+   int l = send(usock, buf, buflen, 0);
+   if (l < 0)
+      err(1, "Tx fail");
+   return NULL;
+}
+
+const char *printer_rx_udp(void)
+{
+   if (error)
+      return error;
+   if (usock < 0)
+      return error = "Printer not connected (UDP)";
+   struct timeval timeout = { 1, 0 };
+   fd_set readfs;
+   FD_ZERO(&readfs);
+   FD_SET(usock, &readfs);
+   if (select(usock + 1, &readfs, NULL, NULL, &timeout) <= 0)
+      return NULL;
+   if (bufmax < 1024 && !(buf = realloc(buf, bufmax = 1024)))
+      errx(1, "malloc");
+   buflen = recv(usock, buf, bufmax, 0);
+   if (!buflen)
+      return error = "No reply from printer";
+   if (buflen < 0)
+      err(1, "Rx UDP fail");
+   if (debug)
+   {
+      fprintf(stderr, "RxU:");
+      int i = 0;
+      for (i = 0; i < buflen && i < 200; i++)
+         fprintf(stderr, "%s%02X", i && !(i & 31) ? "\n     " : (i & 3) ? "" : " ", buf[i]);
+      if (i < buflen)
+         fprintf(stderr, "... (%d)", buflen);
+      fprintf(stderr, "\n");
+   }
+   if (buflen < 16)
+      return "Bad rx length";
+   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
+   return NULL;
+}
+
 const char *printer_tx(void)
 {                               // Raw printer send
    if (error)
       return error;
-   if (
-#ifdef USBPRINT
-         !usbhandle &&
-#endif
-         psock < 0)
-      return "Printer not connected";
+   if (psock < 0)
+      return error = "Printer not connected";
    if (buflen < 16)
-      return "Bad tx";
+      return error = "Bad tx";
    queue++;
    txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    buflen = (buflen + 3) / 4 * 4;
@@ -738,12 +784,7 @@ const char *printer_tx(void)
    while (n < buflen)
    {
       int l = 0;
-#ifdef USBPRINT
-      if (psock < 0)
-         libusb_bulk_transfer(usbhandle, 0x81, buf + buflen, n - buflen, &l, 60000);
-      else
-#endif
-         l = write(psock, buf + n, buflen - n);
+      l = write(psock, buf + n, buflen - n);
       if (l <= 0)
       {
          warn("Tx %d", (int) l);
@@ -760,11 +801,7 @@ const char *printer_rx(void)
       queue--;
    if (error)
       return error;
-   if (
-#ifdef USBPRINT
-         !usbhandle &&
-#endif
-         psock < 0)
+   if (psock < 0)
       rxcmd = 0;
    buflen = 0;
    unsigned int n = 8;
@@ -773,13 +810,7 @@ const char *printer_rx(void)
       if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
          errx(1, "malloc");
       int l = 0;
-#ifdef USBPRINT
-
-      if (psock < 0)
-         libusb_bulk_transfer(usbhandle, 0x02, buf + buflen, n - buflen, &l, 60000);
-      else
-#endif
-         l = read(psock, buf + buflen, n - buflen);
+      l = read(psock, buf + buflen, n - buflen);
       if (!l && !buflen)
          return "Printer disconnected link";
       if (l <= 0)
@@ -921,8 +952,6 @@ const char *set_settings(j_t s, ajl_t o)
    // TODO this seems to not work, maybe only works via UDP?
    if (error)
       return error;
-   while (queue && !error)
-      printer_rx_check(o);
    unsigned char data[SETTINGS * 4] = { };
    int p = 0;
    for (int i = 0; i < SETTINGS; i++)
@@ -957,8 +986,8 @@ const char *set_settings(j_t s, ajl_t o)
    }
    printer_start(0xF0000800, 0);
    printer_data(p, data);
-   printer_tx();
-   printer_rx();
+   printer_tx_udp();
+   printer_rx_udp();
    return error;
 }
 
@@ -966,8 +995,6 @@ const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, cons
 {
    if (error)
       return error;
-   while (queue && !error)
-      printer_rx_check(o);
    printer_start(0xF0000000 + (req << 8), 0);
    unsigned char data[N * 4];
    for (int i = 0; i < N; i++)
@@ -978,8 +1005,8 @@ const char *get_settings(j_t j, ajl_t o, int req, const char *label, int N, cons
       data[i * 4 + 3] = 0;
    }
    printer_data(N * 4, data);
-   printer_tx();
-   printer_rx();
+   printer_tx_udp();
+   printer_rx_udp();
    if (error)
       return error;
    j_t s = j_store_object(j, label);
@@ -1161,10 +1188,12 @@ unsigned char flip = 0;
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
+   j_t j;
    ajl_t o = ajl_write_func(ss_write_func, ss);
    // Connect to printer, get answer back, report to client
    card_check();
    count = 0;
+   printer_udp();
    printer_connect();
    printer_rx_check(o);
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
@@ -1227,7 +1256,7 @@ char *job(const char *from)
       printer_tx_check(o);
    }
    check_position(o);
-   j_t j = j_new();
+   j = j_new();
    get_settings(j, o, 10, "settings", SETTINGS, settings);
    get_settings(j, o, 6, "info", INFO, info);
    j_store_string(j, "type", type);
@@ -1715,7 +1744,8 @@ int main(int argc, const char *argv[])
          { "host", 'h', POPT_ARG_STRING, &bindhost, 0, "Host to bind", "Host/IP" },
          { "port", 'p', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &port, 0, "Port to bind", "port" },
          { "printer", 'H', POPT_ARG_STRING, &printhost, 0, "Printer", "Host/IP" },
-         { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port", "port" },
+         { "print-port", 'P', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printport, 0, "Printer port (TC)", "port" },
+         { "print-udp", 'U', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printudp, 0, "Printer port (UDP)", "port" },
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "listen", 'q', POPT_ARG_INT, &lqueue, 0, "Listen queue", "N" },
