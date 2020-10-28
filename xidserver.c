@@ -1156,13 +1156,11 @@ char *job(const char *from)
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
    status = "Connected";
-   char id[13] = { };
    char type[17] = { };
    if (!error)
    {                            // Send printer info
       // Note IPv4 at 40
       // Note IPv6 at 72
-      strncpy(id, (char *) buf + 30, sizeof(id) - 1);
       strncpy(type, (char *) buf + 56, sizeof(type) - 1);
       int e = strlen(type);
       while (e && type[e - 1] == ' ')
@@ -1213,7 +1211,6 @@ char *job(const char *from)
    j_t j = j_new();
    get_settings(j, o, 10, "settings", SETTINGS, settings);
    get_settings(j, o, 6, "info", INFO, info);
-   j_store_string(j, "id", id);
    j_store_string(j, "type", type);
    j_store_int(j, "rows", rows);
    j_store_int(j, "cols", cols);
