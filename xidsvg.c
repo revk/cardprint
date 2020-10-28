@@ -300,6 +300,8 @@ int main(int argc, const char *argv[])
    char *xidserver = getenv("CARDPRINTER");;
    const char *certfile = NULL;
    const char *keyfile = NULL;
+   int speed = -99;
+   int temp = -99;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -323,6 +325,8 @@ int main(int argc, const char *argv[])
 #endif
          { "input", 'i', POPT_ARG_STRING, &input, 0, "Input file (else stdin)", "filename" },
          { "output", 'o', POPT_ARG_STRING, &output, 0, "Output file (else stdout)", "filename" },
+         { "speed", 'S', POPT_ARG_INT, &speed, 0, "Transfer speed", "N" },
+         { "temp", 'T', POPT_ARG_INT, &temp, 0, "Transfer temp", "N" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
          POPT_AUTOHELP { }
       };
@@ -420,6 +424,25 @@ int main(int argc, const char *argv[])
       const char *v;
       if ((v = j_get(j, "status")))
          status(v);
+      {                         // Settings
+         j_t s = j_find(j, "settings");
+         if (j_isobject(s))
+         {
+            int newspeed = 1;
+            int newtemp = 0;
+            if (speed != -99)
+               newspeed = speed;        // manually set
+            if (temp != -99)
+               newtemp = temp;  // manually set
+            j_t j = j_create();
+            s = j_store_object(j, "settings");
+            j_store_int(s, "transfer-speed-front", newspeed);
+            j_store_int(s, "transfer-speed-back", newspeed);
+            j_store_int(s, "transfer-temp", newtemp);
+            j_err(j_send(j, o));
+         }
+      }
+
       while (j_test(j, "wait", 0) && !(er = j_recv(j, i)))
          if ((v = j_get(j, "status")))
             status(v);
