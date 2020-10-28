@@ -259,6 +259,7 @@
 // Info
 // Similar request syntax
 // film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
+   010e 0a... 		// Printer name
    0c02 0108		// film quantity (8=80%)
    0a02 0100		// 0=exist, 2=non (card quantity)
    0d02 0100		// 0=YMCK,4=YMCKK,5=YMCKU,254=Unknown
@@ -282,6 +283,7 @@ struct setting_s {
 };
 
 const setting_t settings[] = {
+   { 0x01, "name", NULL },
    { 0x14, "card-thickness", "standard//thin" },
    { 0x16, "buzzer", "true/false" },
    { 0x18, "hr-power-save", "//////45/60/false" },
@@ -1639,7 +1641,8 @@ char *job(const char *from)
          }
       } else if ((cmd = j_find(j, "reject")))
       {
-         moveto(POS_REJECT, o);
+         if (posn >= 0)
+            moveto(POS_REJECT, o);
          check_status(o);
          check_position(o);
          client_tx(j_new(), o);
@@ -1661,8 +1664,11 @@ char *job(const char *from)
    if (ers)
    {
       error = NULL;
-      moveto(POS_REJECT, o);
-      sleep(5);
+      if (posn >= 0)
+      {
+         moveto(POS_REJECT, o);
+         sleep(5);
+      }
    }
    printer_disconnect();
    ajl_delete(&i);
