@@ -440,6 +440,7 @@ int main(int argc, const char *argv[])
             j_store_int(s, "transfer-speed-back", newspeed);
             j_store_int(s, "transfer-temp", newtemp);
             j_err(j_send(j, o));
+            j_delete(&j);
          }
       }
 
