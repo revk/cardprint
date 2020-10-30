@@ -52,6 +52,61 @@
 // Maybe 01 01 00 04 is load?
 // Maybe 08 03 is print
 // Maybe 09 00 is transfer / done
+//
+// From command test system :-
+// Printer Status
+// 12 00 00 00 60 00			done twice, returning 96 bytes with info
+// 4D 00 79 00 00 00 00 00 4C 00	done once, returning 76 bytes
+// 	390000480000000400000000001000040000009C00020004000000000003000400000F00000400040000009C000500040000000000060002FE000...
+// 	390000480000000400000000000100040000009C000200040000000000030004FF02D100000400040000009C000500040000000000060002FE000... Door open 0x102D100
+// 	390000480000000400000000000100040000009C00020004000000000003000407000F00000400040000009C000500040000000000060002FE000... Pre heating
+// 	390000480000000400000000000100040000009C000200040000000000030004FF02D000000400040000009C000500040000000000060002FE000... No cards 0x102D000
+// 
+// 00 00 00 00 00 00 returns 00 good			Test unit ready
+// Read position
+// 34 00 00 00 00 00 00 00 00 00 (pre fetch)		Read position
+//>04 00 00 00 00 00 00 00 no card
+// 31 01 00 00 00 00 00 00 00 00			Card load (0)
+// 31 0B 00 00 00 00 00 01 00 00			Card move (1)
+// 31 0B 00 00 02 00 00 02 00 00			Card move (2) flip
+// 31 0B 00 00 04 00 00 01 00 00			Card move (1) film-init
+// 31 0B 01 00 00 00 00 01 00 00			Card move (1) immediate
+// 32 00 00 00 00 00 00 00 00 00			Contact engage
+// 32 01 00 00 00 00 00 00 00 00			Contact release
+// 31 0B 01 00 06 00 00 02 00 00			Card move (2) immediate flip film-init
+// 32 04 00 00 00 00 00 00 00 00			Non-contact engage
+// 32 05 00 00 00 00 00 00 00 00			Non-contact release
+// 31 0B 00 00 00 00 00 04 00 00			Card move (4)
+// 31 01 00 00 02 00 00 02 00 00			Card load (2) flip
+// 34 00 00 00 00 00 00 00 00 00			Read position
+//>00 00 00 00 00 00 00 02				Position 2
+// 31 01 01 00 00 00 00 03 00 00			Card load (3) immediate
+// 2C 00 00 00 B4 00 00 25 00 00			Mag read track 2
+//>B4 25 then data non ascii
+// 2C 00 00 A6 B4 00 4C 25 00 00			Mag read track 1+2
+//>A6 4C ... data B4 25 data...
+// 2C 00 00 A6 B4 C4 4C 25 68 00			Mag Read ISO 1(6x76) 2(4x37) 3(4x104)
+// 2E 00 00 00 00 07 00 00 45 00			Mag Read JIS (7x69)
+// 2C 00 00 A7 B4 C7 45 25 45 00			Mag Read ISO 1(7x69) 2(4x37) 3(7x69)
+// 2C 00 00 A8 B4 C7 4F 25 45 00			Mag Read ISO 1(6x79) 2(4x37) 3(7x69)
+// 2D 00 00 A6 B4 00 00 00 75 00			Mag Write ISO 1+2 (note 75 is length of data sent)
+//<A6 4C data B4 25 data
+// 01 00 00 00 00 00					Re-init unit
+// 31 08 3E 00 00 00 00 00 00 00			Print YMC+K+UV+PO buffer 0 upper right
+// 31 08 3E 00 01 00 00 00 00 00			Print YMC+K+UV_PO buffer 1 upper right
+// 31 08 5E 00 01 00 00 00 00 00			Print YMC+K+UV+PO buffer 1 lower left
+// 31 08 02 00 01 00 00 00 00 00			Print YMC ^
+// 31 08 04 00 01 00 00 00 00 00 			Print K ^
+// 31 08 48 00 01 00 00 00 00 00			Print UV ^
+// 31 08 10 00 01 00 00 00 00 00			Print PO ^
+// 31 08 28 00 01 00 00 00 00 00			Print UV ^ upper right (so 08 is UV, and 20/40 is corner)
+// 31 08 05 00 00 00 00 00 00 00			Print K, buffer 0, immediate
+// 31 09 00 00 00 00 00 00 00 00			Transfer Eject
+// 31 0A 00 00 00 00 00 00 00 00			Transfer Flip
+// 31 0C 05 00 00 00 00 00 00 00			Print KSec (K, buffer 0, immediate)
+// 31 0D 00 00 00 00 00 00 00 00			Transfer Return
+// 31 09 01 00 00 00 00 00 00 00			Transfer Eject Immediate
+// 
 
 
 // Section 5.1: Command Block Wrapper (CBW)
