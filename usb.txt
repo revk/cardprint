@@ -189,13 +189,13 @@ Notes
 
 
 Mode sense, for printer info
-<1A 00 63 00 2C 00
+<1A 00 63 00 2C 00		Ink details?
 >2B 00
  10
  00
  23
  26
- 04	= 4 type?
+ 04	= 4 type? - confirmed, FE for unknown
  00
  02 EE	= 750
  00 00
