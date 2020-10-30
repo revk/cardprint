@@ -23,7 +23,6 @@
 #include <signal.h>
 #include <netdb.h>
 #include <winscard.h>
-#include <libusb-1.0/libusb.h>
 #include <err.h>
 #include <ajl.h>
 #include <ajlparse.h>

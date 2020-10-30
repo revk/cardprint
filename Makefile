@@ -1,4 +1,4 @@
-TARGETS=xidsvg xidserver xidsvg.o mifare ntag
+TARGETS=xidsvg xidserver xidsvg.o mifare ntag testusb
 
 all: ${TARGETS}
 clean:
@@ -31,4 +31,7 @@ mifare: mifare.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
 
 ntag: ntag.c AJL/ajl.o
+	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
+
+testusb: testusb.c
 	cc -O -o $@ $< ${OPTS} -I/usr/include/PCSC -lpopt AJL/ajl.o -pthread -lssl -lpng -lm -lusb-1.0 -lpcsclite -lpthread
