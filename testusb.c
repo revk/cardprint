@@ -106,7 +106,18 @@
 // 31 0C 05 00 00 00 00 00 00 00			Print KSec (K, buffer 0, immediate)
 // 31 0D 00 00 00 00 00 00 00 00			Transfer Return
 // 31 09 01 00 00 00 00 00 00 00			Transfer Eject Immediate
-// 
+// User mode / settings
+// 12 00 00 00 60 00					Get status, 96 bytes - general info, we know this
+// 1A 00 68 00 40 00					Mode sense, 64 bytes
+// 1A 00 6A 00 0E 00					Mode sense, 14 bytes
+// 4D 00 78 00 00 00 00 00 34 00			Log Sense, 52 bytes
+// Non NVR read
+// 1A 00 28 00 40 00					Mode sense, 64 bytes
+// 1A 00 2A 00 0E 00					Mode sense, 14 bytes
+// 4D 00 78 00 00 00 00 00 34 00			Log Sense, 52 bytes
+// NVR write
+// 15 10 28 00 20 00 send 32 bytes			FFS nothing like ethernet
+// 15 10 2A 00 0A 00 send 10 bytes
 
 
 // Section 5.1: Command Block Wrapper (CBW)
