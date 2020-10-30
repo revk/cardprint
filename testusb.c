@@ -187,6 +187,7 @@ int main(int argc, const char *argv[])
    if (r < 0)
       errx(1, "libusb_bulk_transfer failed: %s\n", libusb_error_name(r));
    for(int q=0;q<size;q++)fprintf(stderr,"%02X ",buf[q]);
+   for(int q=0;q<size;q++)fputc(buf[q]<' '?' ':buf[q],stderr);
    warnx("size=%d", size);
 
    struct command_status_wrapper csw;
