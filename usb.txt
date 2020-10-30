@@ -188,4 +188,101 @@ Notes
  2A 08 01 00 FF FF FF 02 FF FF Retry#2
 
 
+Mode sense, for printer info
+<1A 00 63 00 2C 00
+>2B 00
+ 10
+ 00
+ 23
+ 26
+ 04	= 4 type?
+ 00
+ 02 EE	= 750
+ 00 00
+ 46 43 32 32 32 31 00 00 00 ... 00 = FC2221
+
+<1A 00 68 00 40 00 	 Printer info?
+>2F 00
+ 10 00
+ 28 3A
+ 00 00
+ 02 58	= 600
+ 02 58	= 600
+ 00 00
+ 00 00
+ 07 EA = 2026
+ 04 FE = 1278
+ 00 00
+ 00 00
+ 00 00
+ 02 00
+ 00 00
+ 00 00
+ 08 18 = 2072
+ 05 30 = 1328
+ 00 02
+ 01 01
+ 0A 04
+ 00 00
+ 00 03
+ 01 06
+ 06 00
+ 08
+ 07
+ 25
+ 02
+ 03 03
+ 00 01
+ 00 00
+ 00 00
+ 00 00
+
+<4D 00 78 00 00 00 00 00 34 00	Counters?
+>38 00 00 20
+ 00 00 00 04 tag/len?
+ 00 00 00 9D = 157
+ 00 01 00 04 tag/len?
+ 00 00 00 32 = 50
+ 00 02 00 04 tag/len?
+ 00 00 03 84 = 900
+ 00 03 00 04 tag/len?
+ 00 00 00 9D = 157
+ 00 04 00 04 tag/len?
+ 00 00 00 5E = 94
+ 00 00 00 00
+ 00 00 00 00
+ Film type	0
+ Film qty	7
+ Card Thickness	2
+ Card Quantity	2
+ Ink Type	4
+ Ink Quantity	37
+ Panels		750
+ Lot		FC2221
+ Total count	157
+ Free count	50
+ Head count	900
+ Cleaning Count	157
+ Error count	94
+ TFR HR POT	159
+ Remedy HR POT	0
+ Unresettable	159
+ Unresettable	0
+ Sense code	208
+ Basic res X	600
+ Basic res Y	600
+ Card size X	2026
+ Card size Y	1278
+ Print pos X	0
+ Print pos Y	0
+ Print size X	2072
+ Print size Y	1328
+ MG ISO		1
+ IC ISO		1
+ IC R/W		0
+ IC Ant		1
+ Turnover	1
+ Bend remedy	0
+ Security 	1
+ Laminator	0
 
