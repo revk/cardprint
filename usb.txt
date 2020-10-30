@@ -1,0 +1,183 @@
+Notes
+
+ SCSI Inquiry				Getting basic info
+ 12 00 00 00 60 00			96 bytes (00 60)
+ SCSI LogSense			?
+ 4D 00 79 00 00 00 00 00 4C 00	76 bytes (00 4C)
+ 4D 00 78 00 00 00 00 00 34 00	52 bytes (00 34)
+ SCSI ModeSense			?
+ 1A 00 68 00 40 00			64 bytes (00 40)
+ 1A 00 63 00 2C 00			44 bytes (00 2C) includes string FC2221
+ SCSI ReadBuffer
+ 3C 02 70 00 00 00 00 00 06 00	6 bytes 90 3D 68 02 58 C3?
+ SCSI WriteBuffer
+ 3B 02 60 00 00 00 00 00 60 00
+ Sends bulk 96 bytes, job unicode 4f0057004e00450052005f0054004f0044004f0000000000...
+ SCSI PreFetch
+ 34 00 00 00 00 00 00 00 00 00
+ - then some unknown transfer FE? just once, maybe not related?
+ SCSI RequestSense
+ 03 00 00 00 14 00			? 20 bytes ?
+ SCSI 0x31
+ 31 01 01 00 04 00 00 00 00 00	Before the write?
+ SCSI Write
+ 2A 00 03 00 00 00 29 FC 80 00	LBA 03 00 00 00 len 29FC80
+ 2A 00 02 00 00 00 29 FC 80 00	LBA 02 00 00 00 len 29FC80
+ 2A 00 01 00 00 00 29 FC 80 00	LBA 01 00 00 00 len 29FC80
+ Each 41*65536+64640 final block, total 2751616 which is image data
+ SCSI 0x31
+ 31 08 03 00 00 00 00 00 00 00
+ SCSI Test unit ready
+ 00 00 00 00 00 00
+ response ends 01 (check condition)
+ Several senses, response 70 00 02 00 00 00 00 0C 00 00 00 00 D4 00 00 00 00 00 00 00
+ Then test unit ready response 0 (Good)
+ SCSI 0x31
+ 31 09 00 00 00 00 00 00 00 00
+
+ The 0x31 seem to command, only 01 01 00 04, 08 03, 09
+ Maybe 01 01 00 04 is load?
+ Maybe 08 03 is print
+ Maybe 09 00 is transfer / done
+
+ From command test system :-
+ Printer Status
+ 12 00 00 00 60 00			done twice, returning 96 bytes with info
+ 4D 00 79 00 00 00 00 00 4C 00	done once, returning 76 bytes
+ 	390000480000000400000000001000040000009C00020004000000000003000400000F00000400040000009C000500040000000000060002FE000...
+ 	390000480000000400000000000100040000009C000200040000000000030004FF02D100000400040000009C000500040000000000060002FE000... Door open 0x102D100
+ 	390000480000000400000000000100040000009C00020004000000000003000407000F00000400040000009C000500040000000000060002FE000... Pre heating
+ 	390000480000000400000000000100040000009C000200040000000000030004FF02D000000400040000009C000500040000000000060002FE000... No cards 0x102D000
+ 
+ 00 00 00 00 00 00 returns 00 good			Test unit ready
+ Read position
+ 34 00 00 00 00 00 00 00 00 00 (pre fetch)		Read position
+>04 00 00 00 00 00 00 00 no card
+ 31 01 00 00 00 00 00 00 00 00			Card load (0)
+ 31 0B 00 00 00 00 00 01 00 00			Card move (1)
+ 31 0B 00 00 02 00 00 02 00 00			Card move (2) flip
+ 31 0B 00 00 04 00 00 01 00 00			Card move (1) film-init
+ 31 0B 01 00 00 00 00 01 00 00			Card move (1) immediate
+ 32 00 00 00 00 00 00 00 00 00			Contact engage
+ 32 01 00 00 00 00 00 00 00 00			Contact release
+ 31 0B 01 00 06 00 00 02 00 00			Card move (2) immediate flip film-init
+ 32 04 00 00 00 00 00 00 00 00			Non-contact engage
+ 32 05 00 00 00 00 00 00 00 00			Non-contact release
+ 31 0B 00 00 00 00 00 04 00 00			Card move (4)
+ 31 01 00 00 02 00 00 02 00 00			Card load (2) flip
+ 34 00 00 00 00 00 00 00 00 00			Read position
+>00 00 00 00 00 00 00 02				Position 2
+ 31 01 01 00 00 00 00 03 00 00			Card load (3) immediate
+ 2C 00 00 00 B4 00 00 25 00 00			Mag read track 2
+>B4 25 then data non ascii
+ 2C 00 00 A6 B4 00 4C 25 00 00			Mag read track 1+2
+>A6 4C ... data B4 25 data...
+ 2C 00 00 A6 B4 C4 4C 25 68 00			Mag Read ISO 1(6x76) 2(4x37) 3(4x104)
+ 2E 00 00 00 00 07 00 00 45 00			Mag Read JIS (7x69)
+ 2C 00 00 A7 B4 C7 45 25 45 00			Mag Read ISO 1(7x69) 2(4x37) 3(7x69)
+ 2C 00 00 A8 B4 C7 4F 25 45 00			Mag Read ISO 1(6x79) 2(4x37) 3(7x69)
+ 2D 00 00 A6 B4 00 00 00 75 00			Mag Write ISO 1+2 (note 75 is length of data sent)
+<A6 4C data B4 25 data
+ 01 00 00 00 00 00					Re-init unit
+ 31 08 3E 00 00 00 00 00 00 00			Print YMC+K+UV+PO buffer 0 upper right
+ 31 08 3E 00 01 00 00 00 00 00			Print YMC+K+UV_PO buffer 1 upper right
+ 31 08 5E 00 01 00 00 00 00 00			Print YMC+K+UV+PO buffer 1 lower left
+ 31 08 02 00 01 00 00 00 00 00			Print YMC ^
+ 31 08 04 00 01 00 00 00 00 00 			Print K ^
+ 31 08 48 00 01 00 00 00 00 00			Print UV ^
+ 31 08 10 00 01 00 00 00 00 00			Print PO ^
+ 31 08 28 00 01 00 00 00 00 00			Print UV ^ upper right (so 08 is UV, and 20/40 is corner)
+ 31 08 05 00 00 00 00 00 00 00			Print K, buffer 0, immediate
+ 31 09 00 00 00 00 00 00 00 00			Transfer Eject
+ 31 0A 00 00 00 00 00 00 00 00			Transfer Flip
+ 31 0C 05 00 00 00 00 00 00 00			Print KSec (K, buffer 0, immediate)
+ 31 0D 00 00 00 00 00 00 00 00			Transfer Return
+ 31 09 01 00 00 00 00 00 00 00			Transfer Eject Immediate
+ User mode / settings
+ 12 00 00 00 60 00					Get status, 96 bytes - general info, we know this
+ 1A 00 68 00 40 00					Mode sense, 64 bytes
+ 1A 00 6A 00 0E 00					Mode sense, 14 bytes
+ 4D 00 78 00 00 00 00 00 34 00			Log Sense, 52 bytes
+ Non NVR read
+ 1A 00 28 00 40 00					Mode sense, 64 bytes
+ 1A 00 2A 00 0E 00					Mode sense, 14 bytes
+ 4D 00 78 00 00 00 00 00 34 00			Log Sense, 52 bytes
+ NVR write
+ 15 10 28 00 20 00 send 32 bytes			FFS nothing like ethernet
+ 15 10 2A 00 0A 00 send 10 bytes
+
+ Settings!
+ 15 10 28 00 20 00 sending 32 bytes :-
+ // Offset in 32 byte packet
+ 04: RT-Temp#2
+ 05: RT-Speed1#1
+ 06: RT-Speed2#1
+ 07: BendTemp#10
+ 08: BendSpeed#4
+ 0B: PeelMode#0
+ 0C: StandbyMode#0
+ 0D: K#3
+ 0E: K-Mode#1
+ 0F: UV#6
+ 10: PO#3
+ 11: HRControl#0
+ 15: Buzzer#0
+ 16: PoweSave#8
+ 18: Contrast#3
+ 17: YMC#3
+ 1A: DisplayMode#1
+ 1B: COunter#0
+ 1C: RT-UV1#0
+ 1D: RT-UV2#0
+ 1E: BacksideCool#0
+
+             RT R1 R2 BT BS       PL SB K  KM UV PO HR          BZ PS YMC C    DM CT U1 U2 BC
+ 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 03 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF 
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 03 00 00 00 FF 00 08 04 03 FF 01 00 00 00 00 FF YMC#4
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 04 01 06 03 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF K#4
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 00 06 03 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF K-Mode#0
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 05 03 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF UV#5
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 04 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF PO#4
+ 28 1E FF FF 03 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF RT-Temp#3
+ 28 1E FF FF 02 02 01 ... RT-Temp#2
+ 28 1E FF FF 02 01 02 0A
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 01 00 00 FF RU1#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 02 01 00 FF RU2#1 RU1#2
+ 28 1E FF FF 02 01 01 0A 04 FF FF 01 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF Peel#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 01 ... #standby#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 01 FF BacksideCool#1
+ 28 1E FF FF 02 01 01 00 ... BendTemp#0
+ 28 1E FF FF 02 01 01 0A 02 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF BendSpeed#3
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 06 03 03 FF 01 #PowerSave#6
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 01 00 ... HRControl#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 00 00 00 00 DisplayMode#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 01 00 00 00 FF Counter#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 04 FF 01 00 00 00 00 FF Contrast#4
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 01 08 03 03 FF 01 00 00 00 00 FF Buzzer#1
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF ISO#0 ???
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF JIS#1 ???
+ 28 1E FF FF 02 01 01 0A 04 FF FF 00 00 03 01 06 06 00 00 00 FF 00 08 03 03 FF 01 00 00 00 00 FF Retry#1
+
+ 15 10 2D 00 50 00 Setting more settings list IP and defaults 80 bytes
+
+ 2D 4E ?
+ C0 A8 00 8D IPv4
+ FF FF FF 00 Mask
+ C0 A8 00 01 Gateway
+ 00 00 01
+ 58 49 44 38 36 30 30 2D 31 20 00 FF Name?
+ 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 FF FF FF FF FF FF FF FF FF FF FF FF FF  IPv6?
+                                                 ** USB mode if 1
+ 2D 4E C0 A8 00 8D FF FF FF 00 C0 A8 00 01 00 00 00 58 49 44 38 36 30 30 2D 31 20 00 FF 40 00 00 ...
+
+
+ OK 10 byte block
+ 15 10 2A 00 0A 00
+ 2A 08 01 00 FF FF FF 03 FF FF	...
+ 2A 08 00 00 FF FF FF 03 FF FF ISO#0
+ 2A 08 01 01 FF FF FF 03 FF FF JIS#1
+ 2A 08 01 00 FF FF FF 02 FF FF Retry#2
+
+
+

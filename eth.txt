@@ -1,0 +1,252 @@
+// Protocol notes
+// TCP 50730
+// Ethernet send/rx blocks consisting of sequence of 4 byte words
+// Tx (to printer)
+// 0:   is some sort of function - low bit of 1st byte is 0 for command
+//      F2 03   Document info
+//      F0 00 01   Command
+//      F0 00 02   Load image
+//      F0 00 04   Get Settings
+//      F0 00 05   Get info
+//      F0 00 06   Check status
+//      F0 00 08   Change settings (send set of new settings) - does not seem to work via TCP?
+//      F0 00 0A   Get settings non NV?
+// 1:   is count of words from this point (i.e. total-1)
+// 2:   is a parameter of some sort, usually 0
+// 3:   is sequence
+// 4:   onwards is data
+// Rx (from printer)
+// 0:   Ack/function low bit of first byte is 1 for response
+//      F3 02   Connect response
+//      F3 04   Response to document info
+//      F1 00 01   Command response, OK?
+//      F1 00 02   Command response, Not OK?
+//      F1 00 03   Command response, error?
+//      F1 00 04   Settings
+//      F1 00 05   Info
+// 1:   is count of words from this point (i.e. total-1)
+// 2:   is status/error (0=OK)
+// 3:   is sequence (normally echos request to which this is response)
+// The command syntax is then bytes starting on word 4
+// 0:   Command
+// 1:   Number of bytes following this
+// Commands:
+// 01:  Status check, send 2 bytes 00 00
+// 02:  Read position, response is position and mode
+// 03:  Initialise, 2 bytes 00 00
+// 04:  Load card, 2 bytes: flags and position
+//      00      Normal
+//      10      Flip
+//      80      Film initialise
+// 05:  Move card, 2 bytes as per load card
+// 06:  Print, two bytes, flags
+//      0000    No MAC on UV - yay!
+//      0100    Upper right MAC on UV
+//      0200    Lower left MAC on UV
+//      2000    Buffer 1
+// 07:  Transfer, 6 bytes, flags and position and 00
+//      10      Flip
+// 08:  Mag read
+// 09:  Mag write
+// 0A:  Contacts, 2 bytes, flags and 00
+//      10      Not contact engage
+//      40      Not contactless engage
+// 0B:
+// Dump examples
+/*
+// Connect response
+// f300 0200 0000 001c
+   0000 0000 0003 3118 0000 0000 0000 0000
+   0000 0000 0000 5052 494e 5445 5230 3100
+   5bf0 b0c7 0000 0000 0000 0000 0000 0000
+   5849 4438 3630 3020 2020 2020 2020 2020
+   fe80 0000 0000 0000 923d 68ff fe02 58c3
+   2001 067c 2a40 0000 923d 68ff fe02 58c3
+   0000 0000 0000 0000 0000 0000 0000 0000
+// Document start
+// f200 0300 0000 001d
+   0000 0002 9999 9999 0000 0000 7809 1107
+   1529 0000 4f00 7700 6e00 6500 7200 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 4400 6f00 6300 7500 6d00 6500
+   6e00 7400 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000
+// Response
+// f300 0400 0000 0002
+   0000 0000 9999 9999
+// Check status
+// f000 0600 0000 0003
+   0000 0000 0000 0000 0100 0000
+// f100 0600 0000 0004
+   0000 0000 0000 0000 0106 04ff 02d0 0000	No card
+// f100 0600 0000 0004
+   0000 0000 0000 0000 0106 0400 0000 0000	OK
+// Get info
+// f000 0600 0000 000d
+   0000 0000 0000 000a 0c00 0000 0a00 0000 0d00 0000 0b00 0000 0e00 0000 0f00 0000 1f00 0000 2000 0000 2100 0000 1e00 0000 2300 0000               
+// f100 0600 0000 001b
+   0000 0000 0000 000a 0c02 0108 0a02 0100 0d02 0100 0b02 0130 0e06 0203 e800 0000 0f22 2045 4833 3131 3100 0000 0000 0000 0000 0000 0000 0000 0000 0000
+   0000 0000 0000 0000 1f06 0400 0000 7500 2006 0400 0002 f000 2106 0400 0000 7500 1e06 0400 0000 0a00 2306 0400 0000 0800
+// Check laminator status
+// f000 0600 0000 0003
+   0000 0000 0000 0000 3e00 0000
+// f100 0600 0000 0004
+   0000 0000 0000 0000 3e06 02fe 0000 0000	No laminator?
+// Test ready
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0102 0000
+// f100 0200 0000 0002
+   0002 d000 0000 0000				No card
+// f100 0100 0000 0002
+   0000 0000 0000 0000				Ready
+// Read position
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0202 0000
+// f100 0300 0000 0003
+   0000 0000 0000 0000 0102 0400		Card not in machine...
+// Card load to position 2 (Non contact)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 0002
+// f100 0100 0000 0002
+   0000 0000 0000 0000				
+// Card load position 4 (NG Card Exit)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 0004
+// f100 0200 0000 0002
+   0005 2a00 0000 0000				Won't!
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 1000		Load flip
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0402 8000		Load film init
+// Read position
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0202 0000
+// f100 0300 0000 0003
+   0000 0000 0000 0000 0102 0002		Position 2 mode 0 (supply with card try)
+// Print
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 0005 0000 0000	Transfer Eject
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 0000 0000 0000	Transfer Return
+// f000 0100 0000 0004
+   0000 0000 0000 0000 0706 1000 0000 0000	Transfer turn
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 016f		Print (CMY/K/UV/PO) buffer 0 upper right
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 216f		^ buffer 1
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0602 026f		^ Lower left
+// f000 0100 0000 0003
+   0000 0002 0000 0000 0602 016f		^ Immediate (no change)
+// Card move
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 0001		// Position 1
+// f000 0100 0000 0003
+   0000 0002 0000 0000 0502 0001		^ Immediate (no change)
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 1001		^ Flip
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 8001		^ Film initialise
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0502 0004		^ Exit
+// Initialise
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0302 0000
+// IC control
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 0000		// Contact / contact
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 1000		// No contact / contact
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 4000		// Contact / release
+// f000 0100 0000 0003
+   0000 0000 0000 0000 0a02 5000		// No contact / release
+// Print info
+// f000 0500  [....+.+.Xp.....
+   0000 0012 0000 0000 0000 000a 0400 0000  ................
+   0500 0000 0600 0000 0700 0000 0800 0000  ................
+   0900 0000 0a00 0000 0b00 0000 3200 0000  ............2...
+   3300 0000 3600 0000 3700 0000 3800 0000  3...6...7...8...
+   3900 0000 3a00 0000 3b00 0000
+   f100 0500  [..H.+.+.xw+....
+   0000 001a 0000 0000 0000 000a 0406 0202  ................
+   5800 0000 0506 0202 5800 0000 0606 0207  X.......X.......
+   ea00 0000 0706 0204 fe00 0000 0806 0200  ................
+   0000 0000 0906 0200 0000 0000 0a06 0208  ................
+   1800 0000 0b06 0205 3000 0000 3202 0101  ........0...2...
+   3302 0100 3602 0100 3702 0101 3802 0101  3...6...7...8...
+   3902 0101 3a02 0100 3b02 0101   
+// Load image
+   F0000200 000A7F25 00000000 00000005 01000000 0029FC84 0029FC80 00000000 ...
+// Settings UDP
+   f000 0400
+   0000 001d 0000 0000 0000 0000 4600 0000
+   4700 0000 4a00 0000 4b00 0000 5c00 0000
+   4c00 0000 4d00 0000 4e00 0000 5500 0000
+   5600 0000 4f00 0000 5000 0000 3300 0000
+   1400 0000 1600 0000 1800 0000 2a00 0000
+   2800 0000 4800 0000 1d00 0000 1e00 0000
+   1b00 0000 2900 0000 1f00 0000 5d00 0000
+   5e00 0000 5f00 0000
+
+	// Looks like 4 bytes, starting with code and 00 00 00
+	// Response looks same with data in those three bytes
+	// len, type, data, so 0201NN is value NN
+
+	1402 0100	Card thickness 0=Standard, 2=Thin
+	1602 0100	Buzzer, 0=On,1=Off
+	1802 0108	Heat Roller power save, 6=45min,7=60min,8=Off
+	1d02 0101	Display mode, 0=counter,1=laminator state
+	1e02 0100	Display counter, 0=Total,1=Head,2=Free,3=Clean,4=Error
+	1b02 0103	Display contrast, 3=0,4=+1,5=+2
+	1f02 0100	Presumed security lock
+	2802 0101	Retry count,0-3
+	2902 0100	Mag JIS type, 0=LoCo,1=HiCo
+	2a02 0101	Mag ISO type, 0=LoCo,1=HiCo
+	3206 0400 0000 0000 Counter reset
+	3302 0100	Film type 0=1000, 2=750
+	4602 0103	K level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4702 0101	K mode, 0=Standard,1=Fine
+	4802 0103	YMC level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4a02 0106	UV Level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4b02 0103	PO level, 2=-1,3=0,4=+1,5=+2,6=+3
+	4c02 0103	Transfer temp, 0=-2,1=-1,2=0,3=+1,4=+2
+	4d02 0101	Transfer speed front, 1=+1,2=0,3=-1,4=-2,5=-3
+	4e02 0101	Transfer speed back, 1=+1,2=0,3=-1,4=-2,5=-3
+	4f02 010a	Bend temp level, 10=Off,0=-5,1=-4,2=-3,3=-2
+	5002 0104	Bend speed, 0=-2,1=-1,2=0,3=+1,4=+2
+	5502 0100	MG Peel mode, 0=standard, 1=MG Stripe
+	5602 0100	Standby mode, 0=front wait, 1=back wait
+	5c02 0100	Heat roller Control, 0=Off,1=On
+	5d02 0100	Transfer speed front UV, 1=+1,2=0,3=-1,4=-2,5=-3
+	5e02 0100	Transfer speed back UV, 1=+1,2=0,3=-1,4=-2,5=-3
+	5f02 0100	Backside cool, 0=0ff, 1=On
+
+// Info
+// Similar request syntax
+// film-type=0, film-quantity=8(80%),cardthickness=0(standard),cardquantity=0(exist),inktype=0(YMCK),inquantity=48(95%),numberofpanels=1000,inklotnumber=EH3111
+   010e 0a... 		// Printer name
+   0202 0100		// ? Possibly 1=USB
+   0306 045b f0b0 c700	// IPv4 address
+   0406 04ff ffff 0000	// IPv4 subnet
+   0506 04c0 a800 0100	// IPv4 fixed
+   0602 0100		// ?
+   0702 0100		// ?
+   0802 0100		// ?
+   0902 0100		// ?
+   0a02 0100		// 0=exist, 2=non (card quantity)
+   0b02 0140		// ?
+   0c02 0108		// film quantity (8=80%)
+   0d02 0100		// 0=YMCK,4=YMCKK,5=YMCKU,254=Unknown
+   0b02 0130		// 30=48 (48=95%, 49=98%,40=80%,0=0%)
+   0e06 0203 e800 0000	// 03e8=1000 - total ink panels
+   0f22 2045 4833 3131 3100 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 // Ink Lot Number
+   1f06 0400 0000 7500	// 00000075=117
+   2006 0400 0002 f000	// 000002F0=753
+   2106 0400 0000 7500	// 00000075=117
+   1e06 0400 0000 0a00	// 0000000A=10
+   2306 0400 0000 0800	// 00000008=8
+
+*/
