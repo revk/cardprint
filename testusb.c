@@ -12,6 +12,47 @@
 #include <libusb-1.0/libusb.h>
 #include <err.h>
 
+// Notes
+// SCSI Inquiry				Getting basic info
+// 12 00 00 00 60 00			96 bytes (00 60)
+// SCSI LogSense			?
+// 4D 00 79 00 00 00 00 00 4C 00	76 bytes (00 4C)
+// 4D 00 78 00 00 00 00 00 34 00	52 bytes (00 34)
+// SCSI ModeSense			?
+// 1A 00 68 00 40 00			64 bytes (00 40)
+// 1A 00 63 00 2C 00			44 bytes (00 2C) includes string FC2221
+// SCSI ReadBuffer
+// 3C 02 70 00 00 00 00 00 06 00	6 bytes 90 3D 68 02 58 C3?
+// SCSI WriteBuffer
+// 3B 02 60 00 00 00 00 00 60 00
+// Sends bulk 96 bytes, job unicode 4f0057004e00450052005f0054004f0044004f0000000000...
+// SCSI PreFetch
+// 34 00 00 00 00 00 00 00 00 00
+// - then some unknown transfer FE? just once, maybe not related?
+// SCSI RequestSense
+// 03 00 00 00 14 00			? 20 bytes ?
+// SCSI 0x31
+// 31 01 01 00 04 00 00 00 00 00	Before the write?
+// SCSI Write
+// 2A 00 03 00 00 00 29 FC 80 00	LBA 03 00 00 00 len 29FC80
+// 2A 00 02 00 00 00 29 FC 80 00	LBA 02 00 00 00 len 29FC80
+// 2A 00 01 00 00 00 29 FC 80 00	LBA 01 00 00 00 len 29FC80
+// Each 41*65536+64640 final block, total 2751616 which is image data
+// SCSI 0x31
+// 31 08 03 00 00 00 00 00 00 00
+// SCSI Test unit ready
+// 00 00 00 00 00 00
+// response ends 01 (check condition)
+// Several senses, response 70 00 02 00 00 00 00 0C 00 00 00 00 D4 00 00 00 00 00 00 00
+// Then test unit ready response 0 (Good)
+// SCSI 0x31
+// 31 09 00 00 00 00 00 00 00 00
+//
+// The 0x31 seem to command, only 01 01 00 04, 08 03, 09
+// Maybe 01 01 00 04 is load?
+// Maybe 08 03 is print
+// Maybe 09 00 is transfer / done
+
 
 // Section 5.1: Command Block Wrapper (CBW)
 struct command_block_wrapper {
