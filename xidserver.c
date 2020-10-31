@@ -524,12 +524,10 @@ const char *usb_set_settings(j_t j)
          const char *v = j_get(j, settings[i].name);
          if (!v)
             continue;
-         warnx("setting %s", v);
          int l = strlen(v);
          if (!l)
             continue;
          const char *s = settings[i].vals;
-         warnx("setting %s=%s", v, s);
          int n = 0;
          while (*s)
          {
@@ -541,7 +539,6 @@ const char *usb_set_settings(j_t j)
             if (*s)
                s++;
          }
-         warnx("setting %s=%s (%d) @%d", v, s, n, settings[i].wpos);
          if (!*s)
             error = "Bad setting";
          else if (rx[settings[i].rpos] != n)
@@ -1682,7 +1679,7 @@ void card_check(void)
          readeric = strdup(p);
       else if (!readerrfid && strstr(p, "OMNIKEY AG CardMan 5121"))
          readerrfid = strdup(p);
-      else
+      else if (debug)
          warnx("Additional card reader %s ignored", p);
       p += strlen(p) + 1;
    }
