@@ -196,6 +196,7 @@ ajl_t i = NULL,
 
 // General
 const char *client_tx(j_t j);
+const char *client_wait(const char *s);
 const char *moveto(int newposn);
 
 static void dump(const void *buf, size_t len, const char *tag)
@@ -378,7 +379,7 @@ const char *usb_ready(int needcards)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
          j_t j = j_create();
-         j_store_true(j, "wait"); // Add any as not added for No cards otherwise
+         j_store_true(j, "wait");       // Add any as not added for No cards otherwise
          client_tx(j);
       }
       usleep(100000);
@@ -595,7 +596,7 @@ const char *usb_get_counters(j_t j)
 
 const char *usb_get_position(void)
 {
-   if (usb_ready(0))
+   if (usb_ready(1))
       return error;
    unsigned char rx[8];
    int rxlen = 0;
@@ -679,9 +680,8 @@ const char *usb_rfid_disengage(void)
 
 const char *usb_mag_iso_encode(j_t j)
 {
-   status = "Encoding";
-   client_tx(j_create());
    moveto(POS_MAG);
+   client_wait("Mag encode");
    if (usb_ready(0))
       return error;
    unsigned char temp[76 + 37 + 104 + 6];
@@ -725,9 +725,8 @@ const char *usb_mag_iso_read(j_t j)
 {
    j_array(j);
    j_extend(j, 3);
-   status = "Reading";
-   client_tx(j_create());
    moveto(POS_MAG);
+   client_wait("Mag read");
    if (usb_ready(0))
       return error;
    char rx[100];
@@ -1363,9 +1362,8 @@ const char *eth_mag_iso_encode(j_t j)
    }
    if (c)
    {
-      status = "Encoding";
-      client_tx(j_create());
       moveto(POS_MAG);
+      client_wait("Mag encode");
       eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
       eth_data(p, temp);
       eth_tx_check();
@@ -1379,9 +1377,8 @@ const char *eth_mag_iso_encode(j_t j)
 
 const char *eth_mag_iso_read(j_t j)
 {
-   status = "Reading";
-   client_tx(j_create());
    moveto(POS_MAG);
+   client_wait("Mag read");
    // Load tacks separately as loading all at once causes error if any do not read
    void mread(j_t j, unsigned char tag) {
       char t = (tag >> 4) - 1;
@@ -1481,6 +1478,7 @@ const char *get_status(void)
 
 const char *card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
+   client_wait("Loading card");
    if (usb)
       return usb_card_load(posn, immediate, flip, filminit);
    return eth_card_load(posn, immediate, flip, filminit);
@@ -1488,6 +1486,7 @@ const char *card_load(unsigned char posn, unsigned char immediate, unsigned char
 
 const char *card_move(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
+   client_wait("Moving card");
    if (usb)
       return usb_card_move(posn, immediate, flip, filminit);
    return eth_card_move(posn, immediate, flip, filminit);
@@ -1495,6 +1494,7 @@ const char *card_move(unsigned char posn, unsigned char immediate, unsigned char
 
 const char *transfer_flip(unsigned char immediate)
 {
+   client_wait("Transfer flip");
    if (usb)
       return usb_transfer_flip(immediate);
    return eth_transfer_flip(immediate);
@@ -1502,6 +1502,7 @@ const char *transfer_flip(unsigned char immediate)
 
 const char *transfer_eject(unsigned char immediate)
 {
+   client_wait("Transfer and done");
    if (usb)
       return usb_transfer_eject(immediate);
    return eth_transfer_eject(immediate);
@@ -1509,6 +1510,7 @@ const char *transfer_eject(unsigned char immediate)
 
 const char *transfer_return(unsigned char immediate)
 {
+   client_wait("Transfer");
    if (usb)
       return usb_transfer_return(immediate);
    return eth_transfer_return(immediate);
@@ -1849,19 +1851,20 @@ const char *moveto(int newposn)
          error = "Cannot reject card, not loaded";
       else
          card_load(newposn, 0, 0, 0);
-      client_tx(j_create());
    } else if (newposn >= 0)
-   {
-      if (newposn == POS_PRINT)
-         status = "Printing";
-      if (newposn == POS_IC)
-         status = "IC encoding";
-      if (newposn == POS_RFID)
-         status = "RFID encoding";
-      if (newposn == POS_REJECT)
-         status = "Reject card";
       card_move(newposn, 0, 0, 0);
-   }
+   if (newposn == POS_MAG)
+      client_wait("Mag stripe");
+   else if (newposn == POS_IC)
+      client_wait("IC station");
+   else if (newposn == POS_RFID)
+      client_wait("RFID station");
+   else if (newposn == POS_PRINT)
+      client_wait("Printing");
+   else if (newposn == POS_REJECT)
+      client_wait("Reject");
+   else if (newposn == POS_EJECT)
+      client_wait("Done");
    posn = newposn;
    if (posn == POS_IC)
    {
@@ -1928,11 +1931,23 @@ const char *client_tx(j_t j)
    return error;
 }
 
+const char *client_wait(const char *s)
+{
+   if (rxerr || error || !strcmp(status ? : "", s ? : ""))
+      return error;
+   status = s;
+   j_t j = j_create();
+   j_store_true(j, "wait");
+   client_tx(j);
+   return error;
+}
+
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
    count = 0;
    j_t j = j_create();
+   j_store_string(j, "status", status = "Connected");
    // Connect to printer, get answer back, report to client
    card_check();
    j_store_boolean(j, "ic", readeric);
@@ -1953,7 +1968,6 @@ char *job(const char *from)
          libusb_reset_device(usb);
       return strdup(error);
    }
-   j_store_string(j, "status", status = "Connected");
    get_counters(j);
    get_settings(j);
    get_info(j);
@@ -2217,17 +2231,13 @@ char *job(const char *from)
                   moveto(POS_PRINT);    // ready to print
                   if (side)
                   {
-                     status = "Second side";
-                     client_tx(j_create());
                      if (printed)
                         transfer_flip(0);
                      else
                         card_move(POS_PRINT, 0, 1, 0);  // Flip no transfer
+                     client_wait("Second side");
                   } else
-                  {
-                     status = "First side";
-                     client_tx(j_create());
-                  }
+                     client_wait("First side");
                   printed = 0;
                   for (int p = 0; p < 8; p++)
                      if ((p < 3 && (found & 7)) || (found & (1 << p)))
@@ -2246,13 +2256,8 @@ char *job(const char *from)
                         if (printed & 0x40)
                         {       // UV
                            if (printed & 0x0F)
-                           {
-                              status = "Printing";
-                              client_tx(j_create());
                               transfer_return(0);
-                           }
-                           status = "UV";
-                           client_tx(j_create());
+                           client_wait("UV");
                            print_panels(printed & 0x40, 0, 0);  // UV print
                         }
                      }
@@ -2278,7 +2283,6 @@ char *job(const char *from)
                eth_rx_check();
             if (printed)
             {
-               status = "Transfer";
                client_tx(j_create());
                transfer_eject(0);
                status = "Printed";
@@ -2288,7 +2292,6 @@ char *job(const char *from)
                status = "Unprinted";
             }
             get_status();
-            get_position();
             client_tx(j_create());
             break;
          }
@@ -2297,14 +2300,12 @@ char *job(const char *from)
          if (posn >= 0)
             moveto(POS_REJECT);
          get_status();
-         get_position();
          client_tx(j_create());
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT);
          get_status();
-         get_position();
          client_tx(j_create());
          break;
       }
