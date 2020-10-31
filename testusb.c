@@ -208,6 +208,7 @@ int main(int argc, const char *argv[])
    if (size != 13)
       errx(1, "   get_mass_storage_status: received %d bytes (expected 13)\n", size);
 
+   for(int q=0;q<sizeof(csw);q++)fprintf(stderr,"%02X ",((unsigned char *)&csw)[q]);
 
    libusb_release_interface(handle, 0);
    libusb_close(handle);
