@@ -91,6 +91,84 @@ const setting_t info[] = {      // Ethernet info
 
 #define INFO (sizeof(info)/sizeof(*info))
 
+static const char *msg(unsigned int e)
+{
+   if (e == 0x0002DA00)
+      return "Warming up, not ready";
+   if (e == 0x0002DB00)
+      return "Initialising, not ready";
+   if (e == 0x0002D000)
+      return "No cards";
+   if (e == 0x0002C100)
+      return "Cam Error";
+   if (e == 0x0002C200)
+      return "HR Overheat";
+   if (e == 0x0002C300)
+      return "Power Intrpt";
+   if (e == 0x0002D100)
+      return "Door open";
+   if (e == 0x0002D300)
+      return "Busy";
+   if (e == 0x0002D400)
+      return "Busy printing";
+   if (e == 0x0002D800)
+      return "Hardware";
+   if (e == 0x0002F000)
+      return "TR Overheat";
+   if (e == 0x0002F100)
+      return "TR Heater";
+   if (e == 0x0002F200)
+      return "TR Thermister";
+   if (e == 0x0002F300)
+      return "RR Overheat";
+   if (e == 0x0002F400)
+      return "RR Heater";
+   if (e == 0x0002F500)
+      return "RR Thermister";
+   if (e == 0x0002F600)
+      return "Overcool";
+   if (e == 0x0002F800)
+      return "Head Overheat";
+   if (e == 0x00034400)
+      return "Hardware";
+   if (e == 0x00039000)
+      return "Jam(Hopper)";
+   if (e == 0x00039100)
+      return "Jam(TurnOver)";
+   if (e == 0x00039200)
+      return "Jam(MG)";
+   if (e == 0x00039300)
+      return "Jam(Transfer)";
+   if (e == 0x00039400)
+      return "Jam(Discharge)";
+   if (e == 0x00039500)
+      return "Jam(Retran.)";
+   if (e == 0x0003A100)
+      return "Film Search";
+   if (e == 0x0003A800)
+      return "MG Test Err";
+   if (e == 0x0003AB00)
+      return "MG Mechanical";
+   if (e == 0x0003AC00)
+      return "MG Hardware";
+   if (e == 0x0003B000)
+      return "Ink Error";
+   if (e == 0x0003B100)
+      return "Ink Search";
+   if (e == 0x0003B200)
+      return "Ink Run Out";
+   if (e == 0x00052000)
+      return "Bad cmd";
+   if (e == 0x00052600)
+      return "Card position error";
+   if (e == 0x0003AD00)
+      return "Mag write fail";
+   if (e == 0x00062800)
+      return "Reset";
+   return "Printer returned error (see code)";
+}
+
+
 int debug = 0;                  // Top level debug
 int tcp = -1;                   // Connected printer (TCP)
 int udp = -1;                   // Connected printer (UDP)
@@ -111,6 +189,9 @@ unsigned char xid8600 = 0;      // Is an XID8600
 unsigned char flip = 0;         // Image needs flipping
 
 // General
+j_t j_new(void);
+const char *client_tx(j_t j, ajl_t o);
+
 static void dump(void *buf, size_t len, const char *tag)
 {
    if (!debug)
@@ -364,6 +445,17 @@ const char *usb_get_counters(j_t j)
    p += 8;
    if ((rx[p + 0] << 8) + rx[p + 1] == 4 && (rx[p + 2] << 8) + rx[p + 3] == 4)
       j_store_int(j, "error", (rx[p + 4] << 24) + (rx[p + 5] << 16) + (rx[p + 6] << 8) + rx[p + 7]);
+   return NULL;
+}
+
+const char *usb_check_position(void)
+{
+   unsigned char rx[8];
+   int rxlen = 0;
+ usb_txn(0x34, buf: rx, len: 8, rxlen:&rxlen,cmdlen:10);
+   if (error)
+      return error;
+
    return NULL;
 }
 
@@ -634,7 +726,6 @@ const char *eth_rx(void)
    return NULL;
 }
 
-
 const char *eth_get_counters(j_t j)
 {                               // Not done for ethernet
    return NULL;
@@ -708,6 +799,126 @@ const char *eth_get_settings(j_t j, int req, const char *label, int N, const set
    return error;
 }
 
+const char *eth_set_settings(j_t s)
+{
+   // TODO this seems to not work, maybe only works via UDP?
+   if (error)
+      return error;
+   unsigned char data[SETTINGS * 4] = { };
+   int p = 0;
+   for (int i = 0; i < SETTINGS; i++)
+   {
+      const char *v = j_get(s, settings[i].name);
+      if (!v)
+         continue;
+      int l = strlen(v);
+      if (!l)
+         continue;
+      const char *s = settings[i].vals;
+      int n = 0;
+      while (*s)
+      {
+         if (!strncmp(s, v, l))
+            break;
+         n++;
+         while (*s && *s != '/')
+            s++;
+         if (*s)
+            s++;
+      }
+      if (!*s)
+         error = "Bad setting";
+      else
+      {
+         data[p++] = settings[i].etag;
+         data[p++] = 2;
+         data[p++] = 1;
+         data[p++] = n;
+      }
+   }
+   eth_start(0xF0000800, 0);
+   eth_data(p, data);
+   eth_tx_udp();
+   eth_rx_udp();
+   return error;
+}
+
+const char *eth_start_cmd(unsigned int cmd)
+{
+   if (error)
+      return error;
+   eth_start(0xF0000100, 0);
+   unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
+   eth_data(4, c);
+   return NULL;
+}
+
+const char *eth_rx_check(ajl_t o)
+{
+   if (error)
+      return error;
+   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && rxerr != 0x0002D000)
+   {                            // Wait
+      while (queue && !error)
+         eth_rx();
+      if (error)
+         return error;
+      time_t update = 0;
+      time_t now = 0;
+      int last = 0;
+      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && rxerr != 0x0002D000)
+      {
+         if (rxerr != last || now > update)
+         {
+            last = rxerr;
+            j_t j = j_new();
+            j_store_true(j, "wait");
+            client_tx(j, o);
+            update = now;
+         }
+         usleep(100000);
+         eth_start_cmd(0x01020000);
+         eth_tx();
+         eth_rx();
+      }
+      if (!rxerr && o)
+         client_tx(j_new(), o);
+      if (!error && rxerr && rxerr != 0x0002D000)
+         error = msg(rxerr);
+      return error;
+   }
+   if (!error && rxerr && rxerr != 0x0002D000)
+      error = msg(rxerr);
+   else
+      eth_rx();
+   return error;
+}
+
+const char *eth_printer_cmd(unsigned int cmd, ajl_t o)
+{                               // Simple command and response
+   eth_start_cmd(cmd);
+   return eth_tx_check(o);
+}
+
+const char *eth_check_position(void)
+{
+   while (queue && !error)
+      eth_rx_check(NULL);
+   if (error)
+      return error;
+   if (!eth_printer_cmd(0x02020000, NULL))
+   {
+      if (buf[7] >= 3)
+      {
+         posn = buf[19];
+         if (buf[18])
+            posn = POS_OUT;
+      }
+   }
+   return error;
+}
+
+
 // Common commands
 const char *get_counters(j_t j)
 {
@@ -730,12 +941,18 @@ const char *get_info(j_t j)
    return eth_get_settings(j, 6, "info", INFO, info);
 }
 
-const char *eth_set_settings(j_t s);
 const char *set_settings(j_t j)
 {
    if (usb)
       return usb_set_settings(j);
    return eth_set_settings(j);
+}
+
+const char *check_position()
+{
+   if (usb)
+      return usb_check_position();
+   return eth_check_position();
 }
 
 // ------------------------------------------------------------------------------------------
@@ -748,86 +965,7 @@ const char *set_settings(j_t j)
 
 #define freez(n) do{if(n){free((void*)(n));n=NULL;}}while(0)    // Free in situ if needed and null
 
-j_t j_new(void);
-const char *client_tx(j_t j, ajl_t o);
 const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
-
-static const char *msg(unsigned int e)
-{
-   if (e == 0x0002DA00)
-      return "Warming up, not ready";
-   if (e == 0x0002DB00)
-      return "Initialising, not ready";
-   if (e == 0x0002D000)
-      return "No cards";
-   if (e == 0x0002C100)
-      return "Cam Error";
-   if (e == 0x0002C200)
-      return "HR Overheat";
-   if (e == 0x0002C300)
-      return "Power Intrpt";
-   if (e == 0x0002D100)
-      return "Door open";
-   if (e == 0x0002D300)
-      return "Busy";
-   if (e == 0x0002D400)
-      return "Busy printing";
-   if (e == 0x0002D800)
-      return "Hardware";
-   if (e == 0x0002F000)
-      return "TR Overheat";
-   if (e == 0x0002F100)
-      return "TR Heater";
-   if (e == 0x0002F200)
-      return "TR Thermister";
-   if (e == 0x0002F300)
-      return "RR Overheat";
-   if (e == 0x0002F400)
-      return "RR Heater";
-   if (e == 0x0002F500)
-      return "RR Thermister";
-   if (e == 0x0002F600)
-      return "Overcool";
-   if (e == 0x0002F800)
-      return "Head Overheat";
-   if (e == 0x00034400)
-      return "Hardware";
-   if (e == 0x00039000)
-      return "Jam(Hopper)";
-   if (e == 0x00039100)
-      return "Jam(TurnOver)";
-   if (e == 0x00039200)
-      return "Jam(MG)";
-   if (e == 0x00039300)
-      return "Jam(Transfer)";
-   if (e == 0x00039400)
-      return "Jam(Discharge)";
-   if (e == 0x00039500)
-      return "Jam(Retran.)";
-   if (e == 0x0003A100)
-      return "Film Search";
-   if (e == 0x0003A800)
-      return "MG Test Err";
-   if (e == 0x0003AB00)
-      return "MG Mechanical";
-   if (e == 0x0003AC00)
-      return "MG Hardware";
-   if (e == 0x0003B000)
-      return "Ink Error";
-   if (e == 0x0003B100)
-      return "Ink Search";
-   if (e == 0x0003B200)
-      return "Ink Run Out";
-   if (e == 0x00052000)
-      return "Bad cmd";
-   if (e == 0x00052600)
-      return "Card position error";
-   if (e == 0x0003AD00)
-      return "Mag write fail";
-   if (e == 0x00062800)
-      return "Reset";
-   return "Printer returned error (see code)";
-}
 
                                         // Config
 const char *keyfile = NULL;
@@ -989,48 +1127,6 @@ j_t j_new(void)
    return j;
 }
 
-const char *eth_start_cmd(unsigned int cmd);
-const char *eth_rx_check(ajl_t o)
-{
-   if (error)
-      return error;
-   if (!error && ((rxerr >> 16) == 2 || rxerr == 0x00062800) && rxerr != 0x0002D000)
-   {                            // Wait
-      while (queue && !error)
-         eth_rx();
-      if (error)
-         return error;
-      time_t update = 0;
-      time_t now = 0;
-      int last = 0;
-      while (((rxerr >> 16) == 2 || rxerr == 0x00062800) && !error && rxerr != 0x0002D000)
-      {
-         if (rxerr != last || now > update)
-         {
-            last = rxerr;
-            j_t j = j_new();
-            j_store_true(j, "wait");
-            client_tx(j, o);
-            update = now;
-         }
-         usleep(100000);
-         eth_start_cmd(0x01020000);
-         eth_tx();
-         eth_rx();
-      }
-      if (!rxerr && o)
-         client_tx(j_new(), o);
-      if (!error && rxerr && rxerr != 0x0002D000)
-         error = msg(rxerr);
-      return error;
-   }
-   if (!error && rxerr && rxerr != 0x0002D000)
-      error = msg(rxerr);
-   else
-      eth_rx();
-   return error;
-}
-
 void eth_start(unsigned int cmd, unsigned int param)
 {                               // Start message
    if (bufmax < 16 && !(buf = realloc(buf, bufmax = 16)))
@@ -1075,72 +1171,11 @@ const char *eth_tx_check(ajl_t o)
    return error;
 }
 
-const char *eth_start_cmd(unsigned int cmd)
-{
-   if (error)
-      return error;
-   eth_start(0xF0000100, 0);
-   unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
-   eth_data(4, c);
-   return NULL;
-}
-
 const char *printer_queue_cmd(unsigned int cmd)
 {
    eth_start_cmd(cmd);
    return eth_tx();
 }
-
-const char *printer_cmd(unsigned int cmd, ajl_t o)
-{                               // Simple command and response
-   eth_start_cmd(cmd);
-   return eth_tx_check(o);
-}
-
-const char *eth_set_settings(j_t s)
-{
-   // TODO this seems to not work, maybe only works via UDP?
-   if (error)
-      return error;
-   unsigned char data[SETTINGS * 4] = { };
-   int p = 0;
-   for (int i = 0; i < SETTINGS; i++)
-   {
-      const char *v = j_get(s, settings[i].name);
-      if (!v)
-         continue;
-      int l = strlen(v);
-      if (!l)
-         continue;
-      const char *s = settings[i].vals;
-      int n = 0;
-      while (*s)
-      {
-         if (!strncmp(s, v, l))
-            break;
-         n++;
-         while (*s && *s != '/')
-            s++;
-         if (*s)
-            s++;
-      }
-      if (!*s)
-         error = "Bad setting";
-      else
-      {
-         data[p++] = settings[i].etag;
-         data[p++] = 2;
-         data[p++] = 1;
-         data[p++] = n;
-      }
-   }
-   eth_start(0xF0000800, 0);
-   eth_data(p, data);
-   eth_tx_udp();
-   eth_rx_udp();
-   return error;
-}
-
 
 const char *check_status(ajl_t o)
 {
@@ -1148,25 +1183,7 @@ const char *check_status(ajl_t o)
       return error;
    while (queue && !error)
       eth_rx_check(o);
-   return printer_cmd(0x01020000, o);
-}
-
-const char *check_position(ajl_t o)
-{
-   while (queue && !error)
-      eth_rx_check(o);
-   if (error)
-      return error;
-   if (!printer_cmd(0x02020000, o))
-   {
-      if (buf[7] >= 3)
-      {
-         posn = buf[19];
-         if (buf[18])
-            posn = POS_OUT;
-      }
-   }
-   return error;
+   return eth_printer_cmd(0x01020000, o);
 }
 
 const char *moveto(int newposn, ajl_t o)
@@ -1222,21 +1239,21 @@ const char *moveto(int newposn, ajl_t o)
    posn = newposn;
    if (posn == POS_IC)
    {
-      printer_cmd(0x0A020000, o);       // Engage contacts
+      eth_printer_cmd(0x0A020000, o);   // Engage contacts
       check_status(o);
       if ((error = card_connect(readeric, o)))
       {
          error = NULL;
-         printer_cmd(0x0A024000, o);    // Disengage stations
+         eth_printer_cmd(0x0A024000, o);        // Disengage stations
          sleep(1);
-         printer_cmd(0x0A020000, o);    // Engage contacts
+         eth_printer_cmd(0x0A020000, o);        // Engage contacts
          sleep(1);
          if ((error = card_connect(readeric, o)))
             return error;
       }
    } else if (posn == POS_RFID)
    {
-      printer_cmd(0x0A021000, o);       // Engage contactless
+      eth_printer_cmd(0x0A021000, o);   // Engage contactless
       check_status(o);
       if ((error = card_connect(readerrfid, o)))
          return error;
@@ -1297,12 +1314,12 @@ char *job(const char *from)
    get_settings(j);
    get_info(j);
 
-   check_position(o);
+   check_position();
    if (rxerr)
       j_store_true(j, "wait");
    client_tx(j, o);
    check_status(o);
-   check_position(o);
+   check_position();
    if (posn >= 0)
    {
       if (debug)
@@ -1368,7 +1385,7 @@ char *job(const char *from)
             status = "Encoding";
             client_tx(j_new(), o);
             moveto(POS_MAG, o);
-            check_position(o);
+            check_position();
             eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
             eth_data(p, temp);
             eth_tx_check(o);
@@ -1385,7 +1402,7 @@ char *job(const char *from)
             status = "Reading";
             client_tx(j_new(), o);
             moveto(POS_MAG, o);
-            check_position(o);
+            check_position();
             // Load tacks separately as loading all at once causes error if any do not read
             void mread(j_t j, unsigned char tag) {
                char t = (tag >> 4) - 1;
@@ -1664,7 +1681,7 @@ char *job(const char *from)
                   if (printed)
                   {
                      if (j_test(panel, "uvsingle", 0))
-                        printer_cmd(0x06020000 + printed, o);   // UV printed with rest, no special handling
+                        eth_printer_cmd(0x06020000 + printed, o);       // UV printed with rest, no special handling
                      else
                      {          // UV printed separately
                         if (printed & 0x0F)
@@ -1706,7 +1723,7 @@ char *job(const char *from)
             {
                status = "Transfer";
                client_tx(j_new(), o);
-               printer_cmd(0x07020000 + (posn = POS_EJECT), o);
+               eth_printer_cmd(0x07020000 + (posn = POS_EJECT), o);
                status = "Printed";
             } else
             {
@@ -1714,7 +1731,7 @@ char *job(const char *from)
                status = "Unprinted";
             }
             check_status(o);
-            check_position(o);
+            check_position();
             client_tx(j_new(), o);
             break;
          }
@@ -1723,18 +1740,18 @@ char *job(const char *from)
          if (posn >= 0)
             moveto(POS_REJECT, o);
          check_status(o);
-         check_position(o);
+         check_position();
          client_tx(j_new(), o);
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT, o);
          check_status(o);
-         check_position(o);
+         check_position();
          client_tx(j_new(), o);
          break;
       }
-      check_position(o);
+      check_position();
       client_tx(j_new(), o);
    }
 
