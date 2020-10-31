@@ -80,6 +80,8 @@ const setting_t settings[] = {  // Ethernet and USB settings
 
 #define SETTINGS (sizeof(settings)/sizeof(*settings))
 
+const char *inktype[] = { "YMCK", "", "", "", "YMCKK", "YMCKU" };
+
 const setting_t info[] = {      // Ethernet info
    { 0xFF, 0xFF, 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
    { 0xFF, 0xFF, 0x0f, "ink-lot-number", NULL },
@@ -170,6 +172,7 @@ static const char *msg(unsigned int e)
 
 
 int debug = 0;                  // Top level debug
+int dodump = 0;                 // Force all dump
 int tcp = -1;                   // Connected printer (TCP)
 int udp = -1;                   // Connected printer (UDP)
 libusb_device_handle *usb = NULL;       // Connected printer (USB)
@@ -191,7 +194,6 @@ unsigned char flip = 0;         // Image needs flipping
 ajl_t o = NULL;                 // Output to client
 
 // General
-j_t j_new(void);
 const char *client_tx(j_t j);
 
 static void dump(void *buf, size_t len, const char *tag)
@@ -250,10 +252,13 @@ typedef struct {
    void *buf;                   // The buffer for tx or rx of bulk data
    int len;                     // The size of buffer (how much to request if rx)
    int *rxlen;                  // Where to store the rx size
+   unsigned int nodump:1;       // Don't dump
 } usb_txn_t;
 #define	usb_txn(...) usb_txn_opts((usb_txn_t){__VA_ARGS__})
 const char *usb_txn_opts(usb_txn_t o)
 {
+   if (dodump)
+      o.nodump = 0;
    if (!usb)
       errx(1, "usb_txn: USB not connected");
    enum libusb_error r;
@@ -273,7 +278,8 @@ const char *usb_txn_opts(usb_txn_t o)
       }
       if (r)
          return error = libusb_strerror(r);
-      dump(cmd, txsize, "USB CMD");
+      if (!o.nodump)
+         dump(cmd, txsize, "USB CMD");
       if (txsize != sizeof(cmd))
          return error = "USB cmd tx size error";
    }
@@ -291,7 +297,8 @@ const char *usb_txn_opts(usb_txn_t o)
          }
          if (!r)
          {
-            dump(o.buf, len, "UDP Rx");
+            if (!o.nodump)
+               dump(o.buf, len, "UDP Rx");
             *o.rxlen = len;
          }
       } else
@@ -304,7 +311,8 @@ const char *usb_txn_opts(usb_txn_t o)
             libusb_clear_halt(usb, 2);
          }
          if (!r)
-            dump(o.buf, len, "UDP Tx");
+            if (!o.nodump)
+               dump(o.buf, len, "UDP Tx");
       }
       if (r && r != LIBUSB_ERROR_PIPE)
          return error = libusb_strerror(r);
@@ -321,48 +329,56 @@ const char *usb_txn_opts(usb_txn_t o)
       }
       if (r)
          return error = libusb_strerror(r);
-      dump(status, rxsize, "USB status");
+      if (!o.nodump)
+         dump(status, rxsize, "USB status");
       if (rxsize != sizeof(status))
          return error = "USB status rx size error";
       // Check status
       if (status[0] != 'U' || status[1] != 'S' || status[2] != 'B' || status[3] != 'S')
-      {
-         libusb_reset_device(usb);
          return error = "Bad USB status response";
-      }
       if (status[4] + (status[5] << 8) + (status[6] << 16) + (status[7] << 24) != tag)
          return error = "Bad USB status tag";
       if (status[8] || status[9] || status[10] || status[11])
-      {
-         libusb_reset_device(usb);
          return error = "Bad USB status residue";
-      }
       if (status[12])
          return "";
    }
    return error;
 }
 
+const char *usb_get_status(void)
+{                               // Does not wait
+   unsigned char rx[20];
+   int rxlen = 0;
+ usb_txn(nodump:1);
+ if (!usb_txn(0x03, p4: 20, len: 20, buf: rx, rxlen: &rxlen, nodump:1))
+      rxerr = (rx[2] << 16) + (rx[12] << 8);
+   return error;
+}
+
 const char *usb_ready(void)
 {                               // Wait ready
    int last = 0;
+   if (error)
+      return error;
    while (!error)
    {
-      unsigned char rx[20];
-      int rxlen = 0;
-    if (!usb_txn(0x03, p4: 20, len: 20, buf: rx, rxlen:&rxlen) && !(rxerr = (rx[2] << 16) + (rx[12] << 8)) && !usb_txn())
+      usb_get_status();
+      if (!rxerr)
          break;
       if (rxerr && rxerr != last)
       {
+         if (debug)
+            warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
-         j_t j = j_new();
+         j_t j = j_create();
          j_store_true(j, "wait");
          client_tx(j);
       }
       usleep(100000);
    }
    if (last)
-      client_tx(j_new());
+      client_tx(j_create());
    return error;
 }
 
@@ -389,23 +405,43 @@ const char *usb_connect(j_t j)
       return error = libusb_strerror(r);
    // Connected
    j_store_true(j, "usb");
-   usb_ready();
    {                            // Basic info
       unsigned char rx[96];
       int rxlen = 0;
     if (usb_txn(0x12, 0, 0, 0, 96, 0, buf: rx, len: 96, rxlen:&rxlen))
          return error;
-      char type[17];
-      strncpy(type, (char *) rx + 16, 16);
-      for (int i = 15; i && type[i] == ' '; i--)
-         type[i] = 0;
-      j_store_string(j, "type", type);
-      if (!strcmp(type, "XID8600"))
+      char temp[33];
+      strncpy(temp, (char *) rx + 16, 16);
+      for (int i = 15; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_store_string(j, "type", temp);
+      if (!strcmp(temp, "XID8600"))
          flip = xid8600 = 1;
-      else if (!strncmp(type, "XID580", 6))
+      else if (!strncmp(temp, "XID580", 6))
          flip = xid8600 = 0;
       else
          return error = "Unknown printer type";
+      strncpy(temp, (char *) rx + 8, 8);
+      for (int i = 7; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_store_string(j, "manufacturer", temp);
+      strncpy(temp, (char *) rx + 24, 8);
+      for (int i = 7; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_store_string(j, "serial", temp);
+      j_t a = j_store_array(j, "version");
+      strncpy(temp, (char *) rx + 58, 13);
+      for (int i = 12; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_append_string(a, temp);
+      strncpy(temp, (char *) rx + 71, 8);
+      for (int i = 7; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_append_string(a, temp);
+      strncpy(temp, (char *) rx + 79, 8);
+      for (int i = 7; i >= 0 && temp[i] == ' '; i--)
+         temp[i] = 0;
+      j_append_string(a, temp);
    }
    {                            // Printer info
       unsigned char rx[64];
@@ -415,8 +451,10 @@ const char *usb_connect(j_t j)
       dpi = (rx[8] << 8) + rx[9];
       if (!dpi || (rx[10] << 8) + rx[11] != dpi)
          return error = "DPI mismatch";
-      cols = (rx[32] << 8) + rx[33];
       rows = (rx[34] << 8) + rx[35];
+      cols = (rx[32] << 8) + rx[33];
+      j_store_int(j, "card-rows", (rx[18] << 8) + rx[19]);
+      j_store_int(j, "card-cols", (rx[16] << 8) + rx[17]);
    }
    return error;
 }
@@ -466,7 +504,40 @@ const char *usb_get_settings(j_t j)
 
 const char *usb_set_settings(j_t j)
 {
-   // TODO
+   unsigned char tx[32];
+   memset(tx, 0xff, 32);
+   tx[0] = 0x28;
+   tx[1] = 0x1E;                // Length I expect
+   for (int i = 0; i < SETTINGS; i++)
+      if (settings[i].wpos < 32)
+      {
+         const char *v = j_get(j, settings[i].name);
+         if (!v)
+            continue;
+         warnx("setting %s", v);
+         int l = strlen(v);
+         if (!l)
+            continue;
+         const char *s = settings[i].vals;
+         warnx("setting %s=%s", v, s);
+         int n = 0;
+         while (*s)
+         {
+            if (!strncmp(s, v, l))
+               break;
+            n++;
+            while (*s && *s != '/')
+               s++;
+            if (*s)
+               s++;
+         }
+         warnx("setting %s=%s (%d) @%d", v, s, n, settings[i].wpos);
+         if (!*s)
+            error = "Bad setting";
+         else
+            tx[settings[i].wpos] = n;
+      }
+ usb_txn(0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
    return error;
 }
 
@@ -476,7 +547,12 @@ const char *usb_get_info(j_t j)
    int rxlen = 0;
  if (usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
       return error;
-   // TODO
+   j = j_store_object(j, "info");
+   if (rx[6] < sizeof(inktype) / sizeof(*inktype))
+      j_store_string(j, "ink", inktype[rx[6]]);
+   if (rx[12] < 0xFF)
+      j_store_string(j, "ink-lot-number", strndupa((char *) rx + 12, 6));
+   j_store_int(j, "ink-total", (rx[8] << 8) + rx[9]);
    return error;
 }
 
@@ -505,12 +581,12 @@ const char *usb_get_counters(j_t j)
    return error;
 }
 
-const char *usb_check_position(void)
+const char *usb_get_position(void)
 {
-   unsigned char rx[8];
-   int rxlen = 0;
    if (usb_ready())
       return error;
+   unsigned char rx[8];
+   int rxlen = 0;
  if (usb_txn(0x34, buf: rx, len: 8, rxlen: &rxlen, cmdlen:10))
       return error;
    if (rx[0])
@@ -561,15 +637,9 @@ const char *usb_transfer_return(unsigned char immediate)
    return error;
 }
 
-const char *usb_check_status(void)
-{
-   usb_ready();
-   return error;
-}
-
 const char *usb_send_panel(unsigned char panel, unsigned int len, void *data)
 {
-   const unsigned char map[] = { 3, 2, 1, 0, 5, 6 };
+   const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
    if (!usb_ready())
     usb_txn(0x2A, 0, map[panel], 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
    return error;
@@ -582,9 +652,9 @@ const char *usb_print_panels(unsigned char panels, unsigned char immediate, unsi
       set |= 0x02;              // YMC
    if (panels & 0x08)
       set |= 0x04;              // K
-   if (panels & 0x20)
-      set |= 0x08;              // UV
    if (panels & 0x40)
+      set |= 0x08;              // UV
+   if (panels & 0x20)
       set |= 0x10;              // PO
    if (!usb_ready())
       usb_txn(0x31, 0x08, set, 0, buffer);
@@ -935,7 +1005,6 @@ const char *eth_get_settings(j_t j, int req, const char *label, int N, const set
 
 const char *eth_set_settings(j_t s)
 {
-   // TODO this seems to not work, maybe only works via UDP?
    if (error)
       return error;
    unsigned char data[SETTINGS * 4] = { };
@@ -1005,7 +1074,7 @@ const char *eth_rx_check(void)
          if (rxerr != last || now > update)
          {
             last = rxerr;
-            j_t j = j_new();
+            j_t j = j_create();
             j_store_true(j, "wait");
             client_tx(j);
             update = now;
@@ -1016,7 +1085,7 @@ const char *eth_rx_check(void)
          eth_rx();
       }
       if (!rxerr && o)
-         client_tx(j_new());
+         client_tx(j_create());
       if (!error && rxerr && rxerr != 0x0002D000)
          error = msg(rxerr);
       return error;
@@ -1034,7 +1103,7 @@ const char *eth_printer_cmd(unsigned int cmd)
    return eth_tx_check();
 }
 
-const char *eth_check_position(void)
+const char *eth_get_position(void)
 {
    while (queue && !error)
       eth_rx_check();
@@ -1090,7 +1159,7 @@ const char *eth_transfer_return(unsigned char immediate)
    return error;
 }
 
-const char *eth_check_status(void)
+const char *eth_get_status(void)
 {
    if (error)
       return error;
@@ -1130,11 +1199,11 @@ const char *eth_print_panels(unsigned char panels, unsigned char immediate, unsi
 
 // Common commands
 
-const char *check_status(void)
+const char *get_status(void)
 {
    if (usb)
-      return usb_check_status();
-   return eth_check_status();
+      return usb_get_status();
+   return eth_get_status();
 }
 
 const char *card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
@@ -1200,11 +1269,11 @@ const char *set_settings(j_t j)
    return eth_set_settings(j);
 }
 
-const char *check_position()
+const char *get_position()
 {
    if (usb)
-      return usb_check_position();
-   return eth_check_position();
+      return usb_get_position();
+   return eth_get_position();
 }
 
 const char *send_panel(unsigned char panel, unsigned int len, void *data)
@@ -1316,7 +1385,7 @@ const char *card_connect(const char *reader)
    DWORD temp;
    if ((res = SCardStatus(card, 0, &temp, &state, &proto, atr, &atrlen)) != SCARD_S_SUCCESS)
       return "Cannot get card status";
-   j_t j = j_new();
+   j_t j = j_create();
    j_store_string(j, "atr", j_base16(atrlen, atr));
    client_tx(j);
    return error;
@@ -1374,26 +1443,6 @@ void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char 
 }
 
 // Printer specific settings
-j_t j_new(void)
-{
-   j_t j = j_create();
-   if (posn != POS_UNKNOWN)
-      j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
-   if (error)
-   {
-      j_store_string(j, "status", "Error");
-      j_t e = j_store_object(j, "error");
-      j_store_string(e, "description", error);
-      if (rxerr)
-         j_store_stringf(e, "code", "%08X", rxerr);
-   } else if (rxerr)
-      j_store_string(j, "status", msg(rxerr));
-   else if (status)
-      j_store_string(j, "status", status);
-   if (count)
-      j_store_int(j, "count", count);
-   return j;
-}
 
 void eth_start(unsigned int cmd, unsigned int param)
 {                               // Start message
@@ -1456,17 +1505,17 @@ const char *moveto(int newposn)
    }
    if (posn < 0)
    {                            // not in machine
-      check_status();
+      get_status();
       if (rxerr == 0x0002D000)
       {                         // Need cards!
-         j_t j = j_new();
+         j_t j = j_create();
          j_store_string(j, "status", "No cards");
          j_store_true(j, "wait");
          client_tx(j);
          while (rxerr == 0x0002D000)
          {
             usleep(100000);
-            check_status();
+            get_status();
          }
       }
       if (newposn == POS_EJECT)
@@ -1478,7 +1527,7 @@ const char *moveto(int newposn)
          status = "Loading card";
          card_load(newposn, 0, 0, 0);
       }
-      client_tx(j_new());
+      client_tx(j_create());
    } else if (newposn >= 0)
    {
       if (newposn == POS_PRINT)
@@ -1495,7 +1544,7 @@ const char *moveto(int newposn)
    if (posn == POS_IC)
    {
       eth_printer_cmd(0x0A020000);      // Engage contacts
-      check_status();
+      get_status();
       if ((error = card_connect(readeric)))
       {
          error = NULL;
@@ -1509,7 +1558,7 @@ const char *moveto(int newposn)
    } else if (posn == POS_RFID)
    {
       eth_printer_cmd(0x0A021000);      // Engage contactless
-      check_status();
+      get_status();
       if ((error = card_connect(readerrfid)))
          return error;
    }
@@ -1532,9 +1581,25 @@ const char *client_tx(j_t j)
 {                               // Send data to client (deletes)
    if (!ss)
       return "No client";
+   if (posn != POS_UNKNOWN)
+      j_store_string(j, "position", posn < 0 || posn >= sizeof(pos_name) / sizeof(*pos_name) ? NULL : pos_name[posn]);
+   if (error)
+   {
+      j_store_string(j, "status", "Error");
+      j_t e = j_store_object(j, "error");
+      j_store_string(e, "description", error);
+      if (rxerr)
+         j_store_stringf(e, "code", "%08X", rxerr);
+   } else if (rxerr)
+      j_store_string(j, "status", msg(rxerr));
+   else if (status)
+      j_store_string(j, "status", status);
+   if (count)
+      j_store_int(j, "count", count);
    if (debug)
       j_err(j_write_pretty(j, stderr));
-   j_err(j_send(j, o));
+   if (o)
+      j_err(j_send(j, o));
    j_delete(&j);
    return error;
 }
@@ -1542,9 +1607,9 @@ const char *client_tx(j_t j)
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
+   o = NULL;
    count = 0;
    j_t j = j_create();
-   o = ajl_write_func(ss_write_func, ss);
    // Connect to printer, get answer back, report to client
    card_check();
    j_store_boolean(j, "ic", readeric);
@@ -1561,23 +1626,25 @@ char *job(const char *from)
       error = "No printer available";
    if (error)
    {
-      client_tx(j_new());
+      client_tx(j_create());
+      if (usb)
+         libusb_reset_device(usb);
       return strdup(error);
    }
    j_store_string(j, "status", status = "Connected");
    get_counters(j);
    get_settings(j);
    get_info(j);
-   check_status();
-   check_position();            // TODO report position in initial message
+   get_status();
+   o = ajl_write_func(ss_write_func, ss);
    client_tx(j);
 
+   get_position();
    if (posn >= 0)
    {
       if (debug)
          warnx("Unexpected card position %d", posn);
       moveto(POS_REJECT);
-      check_status();
       if (debug)
          warnx("Rejected");
    }
@@ -1635,16 +1702,16 @@ char *job(const char *from)
          if (c)
          {
             status = "Encoding";
-            client_tx(j_new());
+            client_tx(j_create());
             moveto(POS_MAG);
-            check_position();
+            get_position();
             eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
             eth_data(p, temp);
             eth_tx_check();
             status = "Encoded";
             if (!(j_isnull(cmd) || j_istrue(cmd)))
             {                   // Not reading, so confirm write OK
-               j_t j = j_new();
+               j_t j = j_create();
                j_store_boolean(j, "mag", rxerr ? 0 : 1);
                client_tx(j);
             }
@@ -1652,9 +1719,9 @@ char *job(const char *from)
          if (j_isnull(cmd) || j_istrue(cmd))
          {                      // Read
             status = "Reading";
-            client_tx(j_new());
+            client_tx(j_create());
             moveto(POS_MAG);
-            check_position();
+            get_position();
             // Load tacks separately as loading all at once causes error if any do not read
             void mread(j_t j, unsigned char tag) {
                char t = (tag >> 4) - 1;
@@ -1686,7 +1753,7 @@ char *job(const char *from)
                   }
                }
             }
-            j_t j = j_new();
+            j_t j = j_create();
             j_t m = j_store_array(j, "mag");
             mread(m, 0x16);
             mread(m, 0x24);
@@ -1704,7 +1771,7 @@ char *job(const char *from)
             unsigned char rx[256];
             DWORD rxlen = sizeof(rx);
             card_txn(txlen, tx, &rxlen, rx);
-            j_t j = j_new();
+            j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
             client_tx(j);
          }
@@ -1719,7 +1786,7 @@ char *job(const char *from)
             unsigned char rx[256];
             DWORD rxlen = sizeof(rx);
             card_txn(txlen, tx, &rxlen, rx);
-            j_t j = j_new();
+            j_t j = j_create();
             j_store_string(j, "rfid", j_base16(rxlen, rx));
             client_tx(j);
          }
@@ -1899,7 +1966,7 @@ char *job(const char *from)
                   if (side)
                   {
                      status = "Second side";
-                     client_tx(j_new());
+                     client_tx(j_create());
                      if (printed)
                         transfer_flip(0);
                      else
@@ -1907,7 +1974,7 @@ char *job(const char *from)
                   } else
                   {
                      status = "First side";
-                     client_tx(j_new());
+                     client_tx(j_create());
                   }
                   printed = 0;
                   for (int p = 0; p < 8; p++)
@@ -1929,16 +1996,16 @@ char *job(const char *from)
                            if (printed & 0x0F)
                            {
                               status = "Printing";
-                              client_tx(j_new());
+                              client_tx(j_create());
                               transfer_return(0);
                            }
                            status = "UV";
-                           client_tx(j_new());
+                           client_tx(j_create());
                            print_panels(printed & 0x40, 0, 0);  // UV print
                         }
                      }
                   }
-                  check_status();
+                  get_status();
                }
                for (int i = 0; i < 8; i++)
                   if (data[i])
@@ -1960,7 +2027,7 @@ char *job(const char *from)
             if (printed)
             {
                status = "Transfer";
-               client_tx(j_new());
+               client_tx(j_create());
                transfer_eject(0);
                status = "Printed";
             } else
@@ -1968,29 +2035,29 @@ char *job(const char *from)
                moveto(POS_EJECT);       // Done anyway
                status = "Unprinted";
             }
-            check_status();
-            check_position();
-            client_tx(j_new());
+            get_status();
+            get_position();
+            client_tx(j_create());
             break;
          }
       } else if ((cmd = j_find(j, "reject")))
       {
          if (posn >= 0)
             moveto(POS_REJECT);
-         check_status();
-         check_position();
-         client_tx(j_new());
+         get_status();
+         get_position();
+         client_tx(j_create());
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT);
-         check_status();
-         check_position();
-         client_tx(j_new());
+         get_status();
+         get_position();
+         client_tx(j_create());
          break;
       }
-      check_position();
-      client_tx(j_new());
+      get_position();
+      client_tx(j_create());
    }
 
    j_delete(&j);
@@ -2003,6 +2070,12 @@ char *job(const char *from)
       {
          moveto(POS_REJECT);
          sleep(5);
+      }
+      if (usb)
+      {
+         if (debug)
+            warnx("Resetting USB");
+         libusb_reset_device(usb);
       }
    }
    eth_disconnect();
@@ -2034,6 +2107,7 @@ int main(int argc, const char *argv[])
          { "listen", 'q', POPT_ARG_INT, &lqueue, 0, "Listen queue", "N" },
          { "daemon", 'd', POPT_ARG_NONE, &background, 0, "Background" },
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug" },
+         { "dump", 0, POPT_ARG_NONE, &dodump, 0, "Extra dumping" },
          POPT_AUTOHELP { }
       };
       optCon = poptGetContext(NULL, argc, argv, optionsTable, 0);
