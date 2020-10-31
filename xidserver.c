@@ -647,6 +647,34 @@ const char *usb_transfer_return(unsigned char immediate)
    return error;
 }
 
+const char *usb_ic_engage(void)
+{
+   if (!usb_ready())
+      usb_txn(0x32, 0x00);
+   return error;
+}
+
+const char *usb_ic_disengage(void)
+{
+   if (!usb_ready())
+      usb_txn(0x32, 0x01);
+   return error;
+}
+
+const char *usb_rfid_engage(void)
+{
+   if (!usb_ready())
+      usb_txn(0x32, 0x04);
+   return error;
+}
+
+const char *usb_rfid_disengage(void)
+{
+   if (!usb_ready())
+      usb_txn(0x32, 0x05);
+   return error;
+}
+
 const char *usb_send_panel(unsigned char panel, unsigned int len, void *data)
 {
    const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
@@ -1159,13 +1187,37 @@ const char *eth_transfer_flip(unsigned char immediate)
 
 const char *eth_transfer_eject(unsigned char immediate)
 {
-   eth_printer_queue_cmd(0x07020005 + (immediate ? 1 : 0));     // Retransfer and flip
+   eth_printer_queue_cmd(0x07020005 + (immediate ? 1 : 0));     // Retransfer and eject
    return error;
 }
 
 const char *eth_transfer_return(unsigned char immediate)
 {
-   eth_printer_queue_cmd(0x07020000 + (immediate ? 1 : 0));     // Retransfer and flip
+   eth_printer_queue_cmd(0x07020000 + (immediate ? 1 : 0));     // Retransfer and return
+   return error;
+}
+
+const char *eth_ic_engage(void)
+{
+   eth_printer_queue_cmd(0x0A020000);
+   return error;
+}
+
+const char *eth_ic_disengage(void)
+{
+   eth_printer_queue_cmd(0x0A024000);
+   return error;
+}
+
+const char *eth_rfid_engage(void)
+{
+   eth_printer_queue_cmd(0x0A021000);
+   return error;
+}
+
+const char *eth_rfid_disengage(void)
+{
+   eth_printer_queue_cmd(0x0A025000);
    return error;
 }
 
@@ -1284,6 +1336,34 @@ const char *get_position()
    if (usb)
       return usb_get_position();
    return eth_get_position();
+}
+
+const char *ic_engage(void)
+{
+   if (usb)
+      return usb_ic_engage();
+   return eth_ic_engage();
+}
+
+const char *ic_disengage(void)
+{
+   if (usb)
+      return usb_ic_disengage();
+   return eth_ic_disengage();
+}
+
+const char *rfid_engage(void)
+{
+   if (usb)
+      return usb_rfid_engage();
+   return eth_rfid_engage();
+}
+
+const char *rfid_disengage(void)
+{
+   if (usb)
+      return usb_rfid_disengage();
+   return eth_rfid_disengage();
 }
 
 const char *send_panel(unsigned char panel, unsigned int len, void *data)
@@ -1507,11 +1587,11 @@ const char *moveto(int newposn)
    if (posn == POS_IC)
    {
       card_disconnect();
-      eth_printer_queue_cmd(0x0A024000);        // Disengage contacts
+      ic_disengage();
    } else if (posn == POS_RFID)
    {
       card_disconnect();
-      eth_printer_queue_cmd(0x0A025000);        // Disengage contactless
+      rfid_disengage();
    }
    if (posn < 0)
    {                            // not in machine
@@ -1553,21 +1633,21 @@ const char *moveto(int newposn)
    posn = newposn;
    if (posn == POS_IC)
    {
-      eth_printer_cmd(0x0A020000);      // Engage contacts
+      ic_engage();
       get_status();
       if ((error = card_connect(readeric)))
       {
          error = NULL;
-         eth_printer_cmd(0x0A024000);   // Disengage stations
+         ic_disengage();
          sleep(1);
-         eth_printer_cmd(0x0A020000);   // Engage contacts
+         ic_engage();
          sleep(1);
          if ((error = card_connect(readeric)))
             return error;
       }
    } else if (posn == POS_RFID)
    {
-      eth_printer_cmd(0x0A021000);      // Engage contactless
+      rfid_engage();
       get_status();
       if ((error = card_connect(readerrfid)))
          return error;
