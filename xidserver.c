@@ -191,7 +191,8 @@ int dpi = 0,
     cols = 0;                   // Size
 unsigned char xid8600 = 0;      // Is an XID8600
 unsigned char flip = 0;         // Image needs flipping
-ajl_t o = NULL;                 // Output to client
+ajl_t i = NULL,
+    o = NULL;                   // Output to client
 
 // General
 const char *client_tx(j_t j);
@@ -1607,7 +1608,6 @@ const char *client_tx(j_t j)
 // Main connection handling
 char *job(const char *from)
 {                               // This handles a connection from client, and connects to printer to perform operations for a job
-   o = NULL;
    count = 0;
    j_t j = j_create();
    // Connect to printer, get answer back, report to client
@@ -1626,7 +1626,6 @@ char *job(const char *from)
       error = "No printer available";
    if (error)
    {
-      client_tx(j_create());
       if (usb)
          libusb_reset_device(usb);
       return strdup(error);
@@ -1636,7 +1635,6 @@ char *job(const char *from)
    get_settings(j);
    get_info(j);
    get_status();
-   o = ajl_write_func(ss_write_func, ss);
    client_tx(j);
 
    get_position();
@@ -1649,7 +1647,6 @@ char *job(const char *from)
          warnx("Rejected");
    }
 
-   ajl_t i = ajl_read_func(ss_read_func, ss);
    // Handle messages both ways
    char *ers;
    j = j_create();
@@ -2080,8 +2077,6 @@ char *job(const char *from)
    }
    eth_disconnect();
    usb_disconnect();
-   ajl_delete(&i);
-   ajl_delete(&o);
    return ers;
 }
 
@@ -2230,12 +2225,23 @@ int main(int argc, const char *argv[])
             warnx("Could not establish SSL client connection");
             continue;
          }
+         i = ajl_read_func(ss_read_func, ss);
+         o = ajl_write_func(ss_write_func, ss);
          if (!er)
             er = job(from);
          if (debug)
             warnx("Finished %s: %s", from, er ? : "OK");
          if (er)
+         {
+            j_t j = j_create();
+            j_store_string(j, "status", "Error");
+            j_t e = j_store_object(j, "error");
+            j_store_string(e, "description", er);
+            j_err(j_send(j, o));
             free(er);
+         }
+         ajl_delete(&i);
+         ajl_delete(&o);
          SSL_shutdown(ss);
          SSL_free(ss);
          ss = NULL;
