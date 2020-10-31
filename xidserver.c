@@ -736,10 +736,8 @@ const char *usb_mag_iso_read(j_t j)
    int rxlen = 0;
    void decode(void) {
       int p = 0;
-      warnx("rxlen=%d", rxlen);
       while (p < rxlen)
       {
-         warnx("p=%d %02X", p, rx[p]);
          if (p + 2 > rxlen)
             break;
          if (rx[p] < 0xA0 || rx[p] > 0xCF)
@@ -750,7 +748,6 @@ const char *usb_mag_iso_read(j_t j)
          p = q + rx[p + 1];
          if (p > rxlen)
             p = rxlen;
-         warnx("track=%d bits=%d len=%d", track, bits, p - q);
          char temp[256];
          int z = 0;
          if (bits == 7)
