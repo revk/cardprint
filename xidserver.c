@@ -308,13 +308,13 @@ const char *usb_txn_opts(usb_txn_t o)
       if (status[12])
          return "";
    }
-   return NULL;
+   return error;
 }
 
 const char *usb_connect(j_t j)
 {
    if (usb)
-      return NULL;              // connected
+      return error;             // connected
    posn = POS_UNKNOWN;
    error = NULL;
    status = "Connecting";
@@ -327,7 +327,7 @@ const char *usb_connect(j_t j)
       return "USB setting is vendor:product";
    usb = libusb_open_device_with_vid_pid(NULL, vendor, product);
    if (!usb)
-      return NULL;              // Could not connect, let's try ethernet shall we
+      return error;             // Could not connect, let's try ethernet shall we
    if ((r = libusb_set_auto_detach_kernel_driver(usb, 1)))
       return error = libusb_strerror(r);
    if ((r = libusb_claim_interface(usb, 0)))
@@ -362,7 +362,7 @@ const char *usb_connect(j_t j)
       cols = (rx[32] << 8) + rx[33];
       rows = (rx[34] << 8) + rx[34];
    }
-   return NULL;
+   return error;
 }
 
 void usb_disconnect(void)
@@ -402,13 +402,13 @@ const char *usb_get_settings(j_t j)
                j_store_stringn(j, settings[i].name, v, (int) (e - v));
          }
       }
-   return NULL;
+   return error;
 }
 
 const char *usb_set_settings(j_t j)
 {
    // TODO
-   return NULL;
+   return error;
 }
 
 const char *usb_get_info(j_t j)
@@ -418,7 +418,7 @@ const char *usb_get_info(j_t j)
  if (usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
       return error;
    // TODO
-   return NULL;
+   return error;
 }
 
 const char *usb_get_counters(j_t j)
@@ -443,7 +443,7 @@ const char *usb_get_counters(j_t j)
    p += 8;
    if ((rx[p + 0] << 8) + rx[p + 1] == 4 && (rx[p + 2] << 8) + rx[p + 3] == 4)
       j_store_int(j, "error", (rx[p + 4] << 24) + (rx[p + 5] << 16) + (rx[p + 6] << 8) + rx[p + 7]);
-   return NULL;
+   return error;
 }
 
 const char *usb_check_position(void)
@@ -453,16 +453,30 @@ const char *usb_check_position(void)
  if (usb_txn(0x34, buf: rx, len: 8, rxlen: &rxlen, cmdlen:10))
       return error;
    posn = rx[0];
-   return NULL;
+   return error;
 }
 
-const char *usb_card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+const char *usb_card_load(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
- if (usb_txn(0x31, 1, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:posn))
+ if (usb_txn(0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:newposn))
       return error;
-   return NULL;
+   posn = newposn;
+   return error;
 }
 
+const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+ if (usb_txn(0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:newposn))
+      return error;
+   posn = newposn;
+   return error;
+}
+
+const char *usb_check_status(ajl_t o)
+{
+   // TODO
+   return error;
+}
 
 // Low level ETH functions
 void eth_start(unsigned int cmd, unsigned int param);
@@ -470,9 +484,9 @@ void eth_data(unsigned int len, const unsigned char *data);
 const char *eth_connect_udp(j_t j)
 {                               // Set up UDP connect
    if (usb)
-      return NULL;              // USB is connected
+      return error;             // USB is connected
    if (udp >= 0)
-      return NULL;
+      return error;
  const struct addrinfo hints = { ai_family: AF_INET, ai_socktype:SOCK_DGRAM };
    int e;
    struct addrinfo *res = NULL,
@@ -497,7 +511,7 @@ const char *eth_connect_udp(j_t j)
    freeaddrinfo(res);
    if (udp < 0)
       return error = "Could not connect to printer (UDP)";
-   return NULL;
+   return error;
 }
 
 int queue = 0;                  // Command queue
@@ -514,7 +528,7 @@ const char *eth_tx_check(ajl_t o);
 const char *eth_connect_tcp(j_t j)
 {                               // Connect to printer, return error if fail
    if (usb)
-      return NULL;              // USB is connected
+      return error;             // USB is connected
    posn = POS_UNKNOWN;
    queue = 0;
    error = NULL;
@@ -601,7 +615,7 @@ const char *eth_connect_tcp(j_t j)
       }
       eth_tx_check(NULL);
    }
-   return NULL;
+   return error;
 }
 
 const char *eth_disconnect(void)
@@ -610,7 +624,7 @@ const char *eth_disconnect(void)
       return "Not connected";   // Not connected, that is OK
    close(tcp);
    tcp = -1;
-   return NULL;
+   return error;
 }
 
 const char *eth_tx_udp(void)
@@ -632,7 +646,7 @@ const char *eth_tx_udp(void)
    int l = send(udp, buf, buflen, 0);
    if (l < 0)
       err(1, "Tx fail");
-   return NULL;
+   return error;
 }
 
 const char *eth_rx_udp(void)
@@ -646,7 +660,7 @@ const char *eth_rx_udp(void)
    FD_ZERO(&readfs);
    FD_SET(udp, &readfs);
    if (select(udp + 1, &readfs, NULL, NULL, &timeout) <= 0)
-      return NULL;
+      return error;
    if (bufmax < 1024 && !(buf = realloc(buf, bufmax = 1024)))
       errx(1, "malloc");
    buflen = recv(udp, buf, bufmax, 0);
@@ -661,7 +675,7 @@ const char *eth_rx_udp(void)
    buflen = n;
    rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
-   return NULL;
+   return error;
 }
 
 const char *eth_tx(void)
@@ -669,7 +683,7 @@ const char *eth_tx(void)
    if (error)
       return error;
    if (tcp < 0)
-      return error = "Printer not connected";
+      return error = "Printer not connected (tx)";
    if (buflen < 16)
       return error = "Bad tx";
    queue++;
@@ -693,7 +707,7 @@ const char *eth_tx(void)
       }
       n += l;
    }
-   return NULL;
+   return error;
 }
 
 const char *eth_rx(void)
@@ -728,12 +742,12 @@ const char *eth_rx(void)
       return "Bad rx length";
    rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
-   return NULL;
+   return error;
 }
 
 const char *eth_get_counters(j_t j)
 {                               // Not done for ethernet
-   return NULL;
+   return error;
 }
 
 const char *eth_get_settings(j_t j, int req, const char *label, int N, const setting_t * settings)
@@ -855,7 +869,7 @@ const char *eth_start_cmd(unsigned int cmd)
    eth_start(0xF0000100, 0);
    unsigned char c[4] = { cmd >> 24, cmd >> 16, cmd >> 8, cmd };
    eth_data(4, c);
-   return NULL;
+   return error;
 }
 
 const char *eth_rx_check(ajl_t o)
@@ -929,18 +943,50 @@ const char *eth_printer_queue_cmd(unsigned int cmd)
    return eth_tx();
 }
 
-const char *eth_card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+const char *eth_card_load(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
-   eth_printer_queue_cmd(0x04020000 + posn + (flip ? 0x1000 : 0) + (filminit ? 0x8000 : 0) + (immediate ? 1 : 0));      // Load
-   return NULL;
+   eth_printer_queue_cmd(0x04020000 + newposn + (flip ? 0x1000 : 0) + (filminit ? 0x8000 : 0) + (immediate ? 1 : 0));   // Load
+   posn = newposn;
+   return error;
+}
+
+const char *eth_card_move(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+   eth_printer_queue_cmd(0x05020000 + newposn + (flip ? 0x1000 : 0) + (filminit ? 0x8000 : 0) + (immediate ? 1 : 0));   // Load
+   posn = newposn;
+   return error;
+}
+
+const char *eth_check_status(ajl_t o)
+{
+   if (error)
+      return error;
+   while (queue && !error)
+      eth_rx_check(o);
+   return eth_printer_cmd(0x01020000, o);
 }
 
 // Common commands
+
+const char *check_status(ajl_t o)
+{
+   if (usb)
+      return usb_check_status(o);
+   return eth_check_status(o);
+}
+
 const char *card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
    if (usb)
       return usb_card_load(posn, immediate, flip, filminit);
    return eth_card_load(posn, immediate, flip, filminit);
+}
+
+const char *card_move(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+   if (usb)
+      return usb_card_move(posn, immediate, flip, filminit);
+   return eth_card_move(posn, immediate, flip, filminit);
 }
 
 const char *get_counters(j_t j)
@@ -960,7 +1006,7 @@ const char *get_settings(j_t j)
 const char *get_info(j_t j)
 {
    if (usb)
-      return usb_get_settings(j);
+      return usb_get_info(j);
    return eth_get_settings(j, 6, "info", INFO, info);
 }
 
@@ -1074,7 +1120,7 @@ const char *card_connect(const char *reader, ajl_t o)
    j_t j = j_new();
    j_store_string(j, "atr", j_base16(atrlen, atr));
    client_tx(j, o);
-   return NULL;
+   return error;
 }
 
 const char *card_disconnect(void)
@@ -1084,7 +1130,7 @@ const char *card_disconnect(void)
    int res;
    if ((res = SCardDisconnect(card, SCARD_UNPOWER_CARD)) != SCARD_S_SUCCESS)
       return "Cannot end transaction";
-   return NULL;
+   return error;
 }
 
 void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char *rx)
@@ -1194,17 +1240,10 @@ const char *eth_tx_check(ajl_t o)
    return error;
 }
 
-const char *check_status(ajl_t o)
-{
-   if (error)
-      return error;
-   while (queue && !error)
-      eth_rx_check(o);
-   return eth_printer_cmd(0x01020000, o);
-}
-
 const char *moveto(int newposn, ajl_t o)
 {
+   if (debug)
+      warnx("move %d to %d %s", posn, newposn, error ? : "");
    if (error || posn == newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
@@ -1251,7 +1290,7 @@ const char *moveto(int newposn, ajl_t o)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      eth_printer_queue_cmd(0x05020000 + newposn);      // Move
+      card_move(newposn, 0, 0, 0);
    }
    posn = newposn;
    if (posn == POS_IC)
@@ -1298,7 +1337,7 @@ const char *client_tx(j_t j, ajl_t o)
       j_err(j_write_pretty(j, stderr));
    j_err(j_send(j, o));
    j_delete(&j);
-   return NULL;
+   return error;
 }
 
 // Main connection handling
@@ -1335,6 +1374,8 @@ char *job(const char *from)
 
    // TODO testing
    card_load(POS_PRINT, 0, 0, 0);       // TODO
+   if (error)
+      return strdup(error);     // TODO
 
    check_status(o);
    check_position();
@@ -1507,7 +1548,7 @@ char *job(const char *from)
                if (error)
                   return error;
                if (!panel)
-                  return NULL;
+                  return error;
                unsigned char found = 0;
                unsigned char *data[8] = { };
                const char *add(const char *tag1, const char *tag2, int layer) {
@@ -1517,7 +1558,7 @@ char *job(const char *from)
                   if (!d)
                      d = j_get(panel, tag2);
                   if (!d)
-                     return NULL;
+                     return error;
                   if (strncasecmp(d, "data:image/png;base64,", 22))
                      return error = "Image data must be png base64";
                   unsigned char *png = NULL;
@@ -1648,12 +1689,12 @@ char *job(const char *from)
                         free(image);
                      }
                      png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-                     return NULL;
+                     return error;
                   }
                   process();
                   fclose(f);
                   free(png);
-                  return NULL;
+                  return error;
                }
                add("C", "CMY", 0);
                add("K", "K", 3);
@@ -1666,7 +1707,10 @@ char *job(const char *from)
                   {
                      status = "Second side";
                      client_tx(j_new(), o);
-                     eth_printer_queue_cmd(printed ? 0x07021000 : 0x05021000);  // Retransfer and flip if printed, else just flip
+                     if (printed)
+                        eth_printer_queue_cmd(0x07021000);      // Retransfer and flip
+                     else
+                        card_move(POS_PRINT, 0, 1, 0);  // Flip no transfer
                   } else
                   {
                      status = "First side";
