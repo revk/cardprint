@@ -633,21 +633,21 @@ const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsign
 const char *usb_transfer_flip(unsigned char immediate)
 {
    if (!usb_ready())
-      usb_txn(0x31, 0x0A);
+    usb_txn(0x31, 0x0A, to:30);
    return error;
 }
 
 const char *usb_transfer_eject(unsigned char immediate)
 {
    if (!usb_ready())
-      usb_txn(0x31, 0x09);
+    usb_txn(0x31, 0x09, to:30);
    return error;
 }
 
 const char *usb_transfer_return(unsigned char immediate)
 {
    if (!usb_ready())
-      usb_txn(0x31, 0x0D);
+    usb_txn(0x31, 0x0D, to:30);
    return error;
 }
 
@@ -804,7 +804,7 @@ const char *usb_print_panels(unsigned char panels, unsigned char immediate, unsi
    if (panels & 0x20)
       set |= 0x10;              // PO
    if (!usb_ready())
-      usb_txn(0x31, 0x08, set, 0, buffer);
+    usb_txn(0x31, 0x08, set, 0, buffer, to:30);
    return error;
 }
 
