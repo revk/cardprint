@@ -74,13 +74,15 @@ Notes
  2C 00 00 00 B4 00 00 25 00 00			Mag read track 2
 >B4 25 then data non ascii
  2C 00 00 A6 B4 00 4C 25 00 00			Mag read track 1+2
->A6 4C ... data B4 25 data...
+>A6 4C ... data B4 25 data... (this is type+len+data sequence)
  2C 00 00 A6 B4 C4 4C 25 68 00			Mag Read ISO 1(6x76) 2(4x37) 3(4x104)
  2E 00 00 00 00 07 00 00 45 00			Mag Read JIS (7x69)
  2C 00 00 A7 B4 C7 45 25 45 00			Mag Read ISO 1(7x69) 2(4x37) 3(7x69)
  2C 00 00 A8 B4 C7 4F 25 45 00			Mag Read ISO 1(6x79) 2(4x37) 3(7x69)
  2D 00 00 A6 B4 00 00 00 75 00			Mag Write ISO 1+2 (note 75 is length of data sent)
-<A6 4C data B4 25 data
+<A6 4C data B4 25 data (type+len+data sequence)
+ 2F 00 00 00 00 07 00 00 09 00			JIS Write
+>00 00 00 00 07 03 31 32 33
  01 00 00 00 00 00					Re-init unit
  31 08 3E 00 00 00 00 00 00 00			Print YMC+K+UV+PO buffer 0 upper right
  31 08 3E 00 01 00 00 00 00 00			Print YMC+K+UV_PO buffer 1 upper right
