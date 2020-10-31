@@ -1835,7 +1835,7 @@ const char *moveto(int newposn)
    if (posn < 0)
    {                            // not in machine
       get_status();
-      if (rxerr == 0x0002D000)
+      if (!usb && rxerr == 0x0002D000)
       {                         // Need cards!
          j_t j = j_create();
          j_store_string(j, "status", "No cards");
@@ -1920,6 +1920,8 @@ const char *client_tx(j_t j)
       j_store_string(j, "status", msg(rxerr));
    else if (status)
       j_store_string(j, "status", status);
+   if (rxerr)
+      j_store_true(j, "wait");
    if (count)
       j_store_int(j, "count", count);
    if (debug)
