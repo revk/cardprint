@@ -224,7 +224,7 @@ static void dump(void *buf, size_t len, const char *tag)
          else
             fputc('.', stderr);
       rows++;
-      fprintf(stderr, "%04X", b);
+      fprintf(stderr, " %04X", b);
       if (rows > 10 && b + 16 < len)
       {
          fprintf(stderr, " (%d)\n", len);
@@ -352,7 +352,7 @@ const char *usb_ready(void)
       int rxlen = 0;
     if (!usb_txn(0x03, p4: 20, len: 20, buf: rx, rxlen:&rxlen) && !(rxerr = (rx[2] << 16) + (rx[12] << 8)) && !usb_txn())
          break;
-      if (rxerr != last)
+      if (rxerr && rxerr != last)
       {
          last = rxerr;
          j_t j = j_new();
@@ -361,6 +361,8 @@ const char *usb_ready(void)
       }
       usleep(100000);
    }
+   if (last)
+      client_tx(j_new());
    return error;
 }
 
