@@ -198,7 +198,7 @@ ajl_t i = NULL,
 const char *client_tx(j_t j);
 const char *moveto(int newposn);
 
-static void dump(void *buf, size_t len, const char *tag)
+static void dump(const void *buf, size_t len, const char *tag)
 {
    if (!debug)
       return;
@@ -269,7 +269,7 @@ const char *usb_txn_opts(usb_txn_t o)
       errx(1, "usb_txn: USB not connected");
    enum libusb_error r;
    if (!o.cmdlen)
-      o.cmdlen = ((o.p6 || o.p7 || o.p8 || o.cmd == 0x31) ? 10 : 6);    // default len
+      o.cmdlen = ((o.p6 || o.p7 || o.p8 || o.cmd == 0x31 || o.cmd == 0x32) ? 10 : 6);   // default len
    static unsigned int tag = 0;
    ++tag;
    {                            // Send command
@@ -335,15 +335,16 @@ const char *usb_txn_opts(usb_txn_t o)
       }
       if (r)
          return error = libusb_strerror(r);
-      if (!o.nodump)
-         dump(status, rxsize, "USB status");
       if (rxsize != sizeof(status))
-         return error = "USB status rx size error";
-      // Check status
-      if (status[0] != 'U' || status[1] != 'S' || status[2] != 'B' || status[3] != 'S')
-         return error = "Bad USB status response";
-      if (status[4] + (status[5] << 8) + (status[6] << 16) + (status[7] << 24) != tag)
-         return error = "Bad USB status tag";
+         error = "USB status rx size error";
+      else if (status[0] != 'U' || status[1] != 'S' || status[2] != 'B' || status[3] != 'S')
+         error = "Bad USB status response";
+      else if (status[4] + (status[5] << 8) + (status[6] << 16) + (status[7] << 24) != tag)
+         error = "Bad USB status tag";
+      if (error || !o.nodump)
+         dump(status, rxsize, "USB status");
+      if (error)
+         return error;
       //if (status[8] || status[9] || status[10] || status[11]) return error = "Bad USB status residue";
       if (status[12])
          return "";
@@ -651,28 +652,28 @@ const char *usb_transfer_return(unsigned char immediate)
 const char *usb_ic_engage(void)
 {
    if (!usb_ready())
-      usb_txn(0x32, 0x00);
+    usb_txn(0x32, 0x00, to:10);
    return error;
 }
 
 const char *usb_ic_disengage(void)
 {
    if (!usb_ready())
-      usb_txn(0x32, 0x01);
+    usb_txn(0x32, 0x01, to:10);
    return error;
 }
 
 const char *usb_rfid_engage(void)
 {
    if (!usb_ready())
-      usb_txn(0x32, 0x04);
+    usb_txn(0x32, 0x04, to:10);
    return error;
 }
 
 const char *usb_rfid_disengage(void)
 {
    if (!usb_ready())
-      usb_txn(0x32, 0x05);
+    usb_txn(0x32, 0x05, to:10);
    return error;
 }
 
@@ -1734,40 +1735,38 @@ void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char 
    if (error)
       return;
    SCARD_IO_REQUEST recvpci;
-   if (debug)
-      fprintf(stderr, "Card Tx: %s\n", j_base16(txlen, tx));
+   dump(tx, txlen, "Card Tx");
    int res;
    if ((res = SCardTransmit(card, SCARD_PCI_T0, tx, txlen, &recvpci, rx, rxlenp)) != SCARD_S_SUCCESS)
    {
       warnx("Failed to send command (%s)", pcsc_stringify_error(res));
       *rxlenp = 0;
    }
-   if (debug)
-      fprintf(stderr, "Card Rx: %s\n", j_base16(*rxlenp, rx));
+   dump(rx, *rxlenp, "Card Rx");
    if (*rxlenp < 2)
       warnx("Unexpected response");
-   if (buf[0] == 0x93)
-      warnx("Busy error %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x62 || buf[0] == 0x63)
-      warnx("Warning %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x64 || buf[0] == 0x65)
-      warnx("Execution error %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x67 || buf[0] == 0x6C)
-      warnx("Wrong length %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x68)
-      warnx("Function in CLA not supported %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x69)
-      warnx("Command not allowed %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x6A || buf[0] == 0x6B)
-      warnx("Wrong parameter %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x6D)
-      warnx("Invalid INS %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x6E)
-      warnx("Class not supported %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x6F)
-      warnx("No diagnosis - error %02X %02X", buf[0], buf[1]);
-   if (buf[0] == 0x68)
-      warnx("CLA error %02X %02X", buf[0], buf[1]);
+   if (rx[0] == 0x93)
+      warnx("Busy error %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x62 || rx[0] == 0x63)
+      warnx("Warning %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x64 || rx[0] == 0x65)
+      warnx("Execution error %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x67 || rx[0] == 0x6C)
+      warnx("Wrong length %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x68)
+      warnx("Function in CLA not supported %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x69)
+      warnx("Command not allowed %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x6A || rx[0] == 0x6B)
+      warnx("Wrong parameter %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x6D)
+      warnx("Invalid INS %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x6E)
+      warnx("Class not supported %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x6F)
+      warnx("No diagnosis - error %02X %02X", rx[0], rx[1]);
+   if (rx[0] == 0x68)
+      warnx("CLA error %02X %02X", rx[0], rx[1]);
 }
 
 // Printer specific settings
@@ -1868,21 +1867,21 @@ const char *moveto(int newposn)
    {
       ic_engage();
       get_status();
-      if ((error = card_connect(readeric)))
+      if (!error && (error = card_connect(readeric)))
       {
          error = NULL;
          ic_disengage();
          sleep(1);
          ic_engage();
          sleep(1);
-         if ((error = card_connect(readeric)))
+         if (!error && (error = card_connect(readeric)))
             return error;
       }
    } else if (posn == POS_RFID)
    {
       rfid_engage();
       get_status();
-      if ((error = card_connect(readerrfid)))
+      if (!error && (error = card_connect(readerrfid)))
          return error;
    }
    if (posn == POS_EJECT || posn == POS_REJECT)
@@ -2022,9 +2021,11 @@ char *job(const char *from)
             unsigned char rx[256];
             DWORD rxlen = sizeof(rx);
             card_txn(txlen, tx, &rxlen, rx);
+	    warnx("Txn done len %ld",rxlen);
             j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
             client_tx(j);
+	    warnx("ic done");
          }
       }
       if ((cmd = j_find(j, "rfid")))
@@ -2505,8 +2506,10 @@ int main(int argc, const char *argv[])
       close(s);
       int pstatus = 0;
       waitpid(pid, &pstatus, 0);
-      if (!WIFEXITED(pstatus) || WEXITSTATUS(pstatus))
-         warnx("Job failed");
+      if (!WIFEXITED(pstatus))
+         warnx("Job crashed");
+      else if (WEXITSTATUS(pstatus))
+         warnx("Job failed %d", WEXITSTATUS(pstatus));
    }
    {
       int res;
