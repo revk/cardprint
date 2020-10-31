@@ -196,6 +196,7 @@ ajl_t i = NULL,
 
 // General
 const char *client_tx(j_t j);
+const char *moveto(int newposn);
 
 static void dump(void *buf, size_t len, const char *tag)
 {
@@ -672,6 +673,30 @@ const char *usb_rfid_disengage(void)
 {
    if (!usb_ready())
       usb_txn(0x32, 0x05);
+   return error;
+}
+
+const char *usb_mag_iso_encode(j_t j)
+{
+   // TODO
+   return error;
+}
+
+const char *usb_mag_iso_read(j_t j)
+{
+   // TODO
+   return error;
+}
+
+const char *usb_mag_jis_encode(j_t j)
+{
+   // TODO
+   return error;
+}
+
+const char *usb_mag_jis_read(j_t j)
+{
+   // TODO
    return error;
 }
 
@@ -1221,6 +1246,108 @@ const char *eth_rfid_disengage(void)
    return error;
 }
 
+const char *eth_mag_iso_encode(j_t j)
+{
+   unsigned char temp[66 * 3];
+   int p = 0;
+   int c = 0;
+   void encode(unsigned char tag, j_t j) {
+      if (!j_isstring(j))
+         return;
+      const char *v = j_val(j);
+      int len = j_len(j);
+      if (len > 64)
+         error = "Mag track too long";
+      else
+      {
+         temp[p++] = tag;
+         temp[p++] = len;
+         if ((tag & 0xF) == 6)
+            for (int q = 0; q < len; q++)
+               temp[p++] = ((v[q] & 0x3F) ^ 0x20);
+         else
+            for (int q = 0; q < len; q++)
+               temp[p++] = (v[q] & 0xF);
+         c++;
+   }} if (j_isstring(j))
+      encode(0x24, j);
+   else if (j_isarray(j))
+   {
+      encode(0x16, j_index(j, 0));
+      encode(0x24, j_index(j, 1));
+      encode(0x34, j_index(j, 2));
+   }
+   if (c)
+   {
+      status = "Encoding";
+      client_tx(j_create());
+      moveto(POS_MAG);
+      eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
+      eth_data(p, temp);
+      eth_tx_check();
+      status = "Encoded";
+      j_t j = j_create();
+      j_store_boolean(j, "mag", rxerr ? 0 : 1);
+      client_tx(j);
+   }
+   return error;
+}
+
+const char *eth_mag_iso_read(j_t j)
+{
+   status = "Reading";
+   client_tx(j_create());
+   moveto(POS_MAG);
+   // Load tacks separately as loading all at once causes error if any do not read
+   void mread(j_t j, unsigned char tag) {
+      char t = (tag >> 4) - 1;
+      unsigned char temp[4] = { };
+      if (t)
+         temp[t - 1] = tag;
+      eth_start_cmd(0x08060000 + (t ? 0 : 0x16));
+      eth_data(4, temp);
+      eth_tx();
+      eth_rx();
+      if (rxerr)
+         j_append_null(j);
+      else
+      {
+         int p = 20;
+         int c = buf[p++];
+         while (c--)
+         {
+            unsigned char tag = buf[p++];
+            unsigned char len = buf[p++];
+            if ((tag & 0xF) == 6)
+               for (int q = 0; q < len; q++)
+                  buf[p + q] = (buf[p + q] & 0x3F) + 0x20;
+            else
+               for (int q = 0; q < len; q++)
+                  buf[p + q] = (buf[p + q] & 0xF) + '0';
+            j_append_stringn(j, (char *) buf + p, len);
+            p += len;
+         }
+      }
+   }
+   mread(j, 0x16);
+   mread(j, 0x24);
+   mread(j, 0x34);
+   return error;
+}
+
+const char *eth_mag_jis_encode(j_t j)
+{
+   // TODO
+   return error;
+}
+
+const char *eth_mag_jis_read(j_t j)
+{
+   // TODO
+   return error;
+}
+
+
 const char *eth_get_status(void)
 {
    if (error)
@@ -1364,6 +1491,34 @@ const char *rfid_disengage(void)
    if (usb)
       return usb_rfid_disengage();
    return eth_rfid_disengage();
+}
+
+const char *mag_iso_encode(j_t j)
+{
+   if (usb)
+      return usb_mag_iso_encode(j);
+   return eth_mag_iso_encode(j);
+}
+
+const char *mag_iso_read(j_t j)
+{
+   if (usb)
+      return usb_mag_iso_encode(j);
+   return eth_mag_iso_encode(j);
+}
+
+const char *mag_jis_encode(j_t j)
+{
+   if (usb)
+      return usb_mag_jis_encode(j);
+   return eth_mag_jis_encode(j);
+}
+
+const char *mag_jis_read(j_t j)
+{
+   if (usb)
+      return usb_mag_jis_encode(j);
+   return eth_mag_jis_encode(j);
 }
 
 const char *send_panel(unsigned char panel, unsigned int len, void *data)
@@ -1753,97 +1908,25 @@ char *job(const char *from)
       j_t cmd = NULL;
       if ((cmd = j_find(j, "settings")))
          set_settings(cmd);
+      if ((cmd = j_find(j, "jis")))
+      {
+         if (j_isstring(cmd))
+            mag_jis_encode(cmd);
+         else if (j_isnull(cmd) || j_istrue(cmd))
+         {
+            j_t j = j_create();
+            mag_jis_read(j_store_array(j, "mag"));
+            client_tx(j);
+         }
+      }
       if ((cmd = j_find(j, "mag")))
       {
-         unsigned char temp[66 * 3];
-         int p = 0;
-         int c = 0;
-         void encode(unsigned char tag, j_t j) {
-            if (!j_isstring(j))
-               return;
-            const char *v = j_val(j);
-            int len = j_len(j);
-            if (len > 64)
-               error = "Mag track too long";
-            else
-            {
-               temp[p++] = tag;
-               temp[p++] = len;
-               if ((tag & 0xF) == 6)
-                  for (int q = 0; q < len; q++)
-                     temp[p++] = ((v[q] & 0x3F) ^ 0x20);
-               else
-                  for (int q = 0; q < len; q++)
-                     temp[p++] = (v[q] & 0xF);
-               c++;
-         }} if (j_isstring(cmd))
-            encode(0x24, cmd);
-         else if (j_isarray(cmd))
+         if (j_isarray(cmd))
+            mag_iso_encode(cmd);
+         else if (j_isnull(cmd) || j_istrue(cmd))
          {
-            // 07 is JIS
-            encode(0x16, j_index(cmd, 0));
-            encode(0x24, j_index(cmd, 1));
-            encode(0x34, j_index(cmd, 2));
-         }
-         if (c)
-         {
-            status = "Encoding";
-            client_tx(j_create());
-            moveto(POS_MAG);
-            get_position();
-            eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
-            eth_data(p, temp);
-            eth_tx_check();
-            status = "Encoded";
-            if (!(j_isnull(cmd) || j_istrue(cmd)))
-            {                   // Not reading, so confirm write OK
-               j_t j = j_create();
-               j_store_boolean(j, "mag", rxerr ? 0 : 1);
-               client_tx(j);
-            }
-         }
-         if (j_isnull(cmd) || j_istrue(cmd))
-         {                      // Read
-            status = "Reading";
-            client_tx(j_create());
-            moveto(POS_MAG);
-            get_position();
-            // Load tacks separately as loading all at once causes error if any do not read
-            void mread(j_t j, unsigned char tag) {
-               char t = (tag >> 4) - 1;
-               unsigned char temp[4] = { };
-               if (t)
-                  temp[t - 1] = tag;
-               eth_start_cmd(0x08060000 + (t ? 0 : 0x16));
-               eth_data(4, temp);
-               eth_tx();
-               eth_rx();
-               if (rxerr)
-                  j_append_null(j);
-               else
-               {
-                  int p = 20;
-                  int c = buf[p++];
-                  while (c--)
-                  {
-                     unsigned char tag = buf[p++];
-                     unsigned char len = buf[p++];
-                     if ((tag & 0xF) == 6)
-                        for (int q = 0; q < len; q++)
-                           buf[p + q] = (buf[p + q] & 0x3F) + 0x20;
-                     else
-                        for (int q = 0; q < len; q++)
-                           buf[p + q] = (buf[p + q] & 0xF) + '0';
-                     j_append_stringn(j, (char *) buf + p, len);
-                     p += len;
-                  }
-               }
-            }
             j_t j = j_create();
-            j_t m = j_store_array(j, "mag");
-            mread(m, 0x16);
-            mread(m, 0x24);
-            mread(m, 0x34);
+            mag_iso_read(j_store_array(j, "mag"));
             client_tx(j);
          }
       }
