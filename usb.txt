@@ -54,7 +54,7 @@ Notes
  
  00 00 00 00 00 00 returns 00 good			Test unit ready
  Read position
- 34 00 00 00 00 00 00 00 00 00 (pre fetch)		Read position
+ 34 00 00 00 00 00 00 00 00 00 (pre fetch)		Read position ???
 >04 00 00 00 00 00 00 00 no card
  31 01 00 00 00 00 00 00 00 00			Card load (0)
  31 0B 00 00 00 00 00 01 00 00			Card move (1)
