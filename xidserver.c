@@ -362,7 +362,7 @@ const char *usb_get_status(void)
    return error;
 }
 
-const char *usb_ready(void)
+const char *usb_ready(int needcards)
 {                               // Wait ready
    int last = 0;
    if (error)
@@ -370,16 +370,14 @@ const char *usb_ready(void)
    while (!error)
    {
       usb_get_status();
-      if (!rxerr)
+      if (!rxerr || (!needcards && rxerr == 0x0002D000))
          break;
       if (rxerr && rxerr != last)
       {
          if (debug)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
-         j_t j = j_create();
-         j_store_true(j, "wait");
-         client_tx(j);
+         client_tx(j_create());
       }
       usleep(100000);
    }
@@ -595,7 +593,7 @@ const char *usb_get_counters(j_t j)
 
 const char *usb_get_position(void)
 {
-   if (usb_ready())
+   if (usb_ready(0))
       return error;
    unsigned char rx[8];
    int rxlen = 0;
@@ -610,7 +608,7 @@ const char *usb_get_position(void)
 
 const char *usb_card_load(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
-   if (usb_ready())
+   if (usb_ready(1))
       return error;
  if (usb_txn(0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
       return error;
@@ -620,7 +618,7 @@ const char *usb_card_load(unsigned char newposn, unsigned char immediate, unsign
 
 const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
-   if (usb_ready())
+   if (usb_ready(0))
       return error;
  if (usb_txn(0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:30))
       return error;
@@ -630,49 +628,49 @@ const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsign
 
 const char *usb_transfer_flip(unsigned char immediate)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x31, 0x0A, to:30);
    return error;
 }
 
 const char *usb_transfer_eject(unsigned char immediate)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x31, 0x09, to:30);
    return error;
 }
 
 const char *usb_transfer_return(unsigned char immediate)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x31, 0x0D, to:30);
    return error;
 }
 
 const char *usb_ic_engage(void)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x32, 0x00, to:10);
    return error;
 }
 
 const char *usb_ic_disengage(void)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x32, 0x01, to:10);
    return error;
 }
 
 const char *usb_rfid_engage(void)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x32, 0x04, to:10);
    return error;
 }
 
 const char *usb_rfid_disengage(void)
 {
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x32, 0x05, to:10);
    return error;
 }
@@ -682,7 +680,7 @@ const char *usb_mag_iso_encode(j_t j)
    status = "Encoding";
    client_tx(j_create());
    moveto(POS_MAG);
-   if (usb_ready())
+   if (usb_ready(0))
       return error;
    unsigned char temp[76 + 37 + 104 + 6];
    unsigned char tags[3] = { };
@@ -728,7 +726,7 @@ const char *usb_mag_iso_read(j_t j)
    status = "Reading";
    client_tx(j_create());
    moveto(POS_MAG);
-   if (usb_ready())
+   if (usb_ready(0))
       return error;
    char rx[100];
    int rxlen = 0;
@@ -785,7 +783,7 @@ const char *usb_mag_jis_read(j_t j)
 const char *usb_send_panel(unsigned char panel, unsigned int len, void *data)
 {
    const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x2A, 0, map[panel], 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
    return error;
 }
@@ -801,7 +799,7 @@ const char *usb_print_panels(unsigned char panels, unsigned char immediate, unsi
       set |= 0x08;              // UV
    if (panels & 0x20)
       set |= 0x10;              // PO
-   if (!usb_ready())
+   if (!usb_ready(0))
     usb_txn(0x31, 0x08, set, 0, buffer, to:30);
    return error;
 }
@@ -2021,11 +2019,11 @@ char *job(const char *from)
             unsigned char rx[256];
             DWORD rxlen = sizeof(rx);
             card_txn(txlen, tx, &rxlen, rx);
-	    warnx("Txn done len %ld",rxlen);
+            warnx("Txn done len %ld", rxlen);
             j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
             client_tx(j);
-	    warnx("ic done");
+            warnx("ic done");
          }
       }
       if ((cmd = j_find(j, "rfid")))
