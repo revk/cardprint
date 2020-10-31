@@ -366,6 +366,7 @@ const char *usb_get_status(void)
 const char *usb_ready(int needcards)
 {                               // Wait ready
    int last = 0;
+   time_t when = time(0);
    if (error)
       return error;
    while (!error)
@@ -373,8 +374,10 @@ const char *usb_ready(int needcards)
       usb_get_status();
       if (!rxerr || (!needcards && rxerr == 0x0002D000))
          break;
-      if (rxerr && rxerr != last)
+      time_t now = time(0);
+      if (rxerr && (rxerr != last || now != when))
       {
+         when = now;
          if (debug)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
