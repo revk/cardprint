@@ -246,7 +246,7 @@ const char *usb_txn_opts(usb_txn_t o)
       errx(1, "usb_txn: USB not connected");
    enum libusb_error r;
    if (!o.cmdlen)
-      o.cmdlen = ((o.p6 || o.p7 || o.p8) ? 10 : 6);     // default len
+      o.cmdlen = ((o.p6 || o.p7 || o.p8 || o.cmd == 0x31) ? 10 : 6);    // default len
    static unsigned int tag = 0;
    ++tag;
    {                            // Send command
@@ -280,7 +280,7 @@ const char *usb_txn_opts(usb_txn_t o)
          if (!(r = libusb_bulk_transfer(usb, 2, o.buf, o.len, &len, 1000)))
             dump(o.buf, len, "UDP Tx");
       }
-      if (r)
+      if (r && r != LIBUSB_ERROR_PIPE)
          return error = libusb_strerror(r);
    }
    {                            // Get status
@@ -315,6 +315,9 @@ const char *usb_connect(j_t j)
 {
    if (usb)
       return NULL;              // connected
+   posn = POS_UNKNOWN;
+   error = NULL;
+   status = "Connecting";
    enum libusb_error r;
    if ((r = libusb_init(NULL)))
       return error = libusb_strerror(r);
@@ -334,8 +337,7 @@ const char *usb_connect(j_t j)
    {                            // Basic info
       unsigned char rx[96];
       int rxlen = 0;
-    usb_txn(0x12, 0, 0, 0, 96, 0, buf: rx, len: 96, rxlen:&rxlen);
-      if (error)
+    if (usb_txn(0x12, 0, 0, 0, 96, 0, buf: rx, len: 96, rxlen:&rxlen))
          return error;
       char type[17];
       strncpy(type, (char *) rx + 16, 16);
@@ -352,8 +354,7 @@ const char *usb_connect(j_t j)
    {                            // Printer info
       unsigned char rx[64];
       int rxlen = 0;
-    usb_txn(0x1A, 0, 0x68, 0, 64, 0, buf: rx, len: 64, rxlen:&rxlen);
-      if (error)
+    if (usb_txn(0x1A, 0, 0x68, 0, 64, 0, buf: rx, len: 64, rxlen:&rxlen))
          return error;
       dpi = (rx[8] << 8) + rx[9];
       if (!dpi || (rx[10] << 8) + rx[11] != dpi)
@@ -377,8 +378,7 @@ const char *usb_get_settings(j_t j)
 {
    unsigned char rx[64];
    int rxlen = 0;
- usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen);
-   if (error)
+ if (usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "settings");
    int n;
@@ -415,8 +415,7 @@ const char *usb_get_info(j_t j)
 {
    unsigned char rx[44];
    int rxlen = 0;
- usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen);
-   if (error)
+ if (usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
       return error;
    // TODO
    return NULL;
@@ -426,8 +425,7 @@ const char *usb_get_counters(j_t j)
 {
    unsigned char rx[52];
    int rxlen = 0;
- usb_txn(0x4D, 0, 0x78, 0, 0, 0, 0, 0, 52, buf: rx, len: 52, rxlen:&rxlen);
-   if (error)
+ if (usb_txn(0x4D, 0, 0x78, 0, 0, 0, 0, 0, 52, buf: rx, len: 52, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "counters");
    int p = 4;
@@ -452,12 +450,19 @@ const char *usb_check_position(void)
 {
    unsigned char rx[8];
    int rxlen = 0;
- usb_txn(0x34, buf: rx, len: 8, rxlen:&rxlen,cmdlen:10);
-   if (error)
+ if (usb_txn(0x34, buf: rx, len: 8, rxlen: &rxlen, cmdlen:10))
       return error;
-
+   posn = rx[0];
    return NULL;
 }
+
+const char *usb_card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+ if (usb_txn(0x31, 1, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:posn))
+      return error;
+   return NULL;
+}
+
 
 // Low level ETH functions
 void eth_start(unsigned int cmd, unsigned int param);
@@ -918,8 +923,26 @@ const char *eth_check_position(void)
    return error;
 }
 
+const char *eth_printer_queue_cmd(unsigned int cmd)
+{
+   eth_start_cmd(cmd);
+   return eth_tx();
+}
+
+const char *eth_card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+   eth_printer_queue_cmd(0x04020000 + posn + (flip ? 0x1000 : 0) + (filminit ? 0x8000 : 0) + (immediate ? 1 : 0));      // Load
+   return NULL;
+}
 
 // Common commands
+const char *card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
+{
+   if (usb)
+      return usb_card_load(posn, immediate, flip, filminit);
+   return eth_card_load(posn, immediate, flip, filminit);
+}
+
 const char *get_counters(j_t j)
 {
    if (usb)
@@ -1171,12 +1194,6 @@ const char *eth_tx_check(ajl_t o)
    return error;
 }
 
-const char *printer_queue_cmd(unsigned int cmd)
-{
-   eth_start_cmd(cmd);
-   return eth_tx();
-}
-
 const char *check_status(ajl_t o)
 {
    if (error)
@@ -1193,11 +1210,11 @@ const char *moveto(int newposn, ajl_t o)
    if (posn == POS_IC)
    {
       card_disconnect();
-      printer_queue_cmd(0x0A024000);    // Disengage contacts
+      eth_printer_queue_cmd(0x0A024000);        // Disengage contacts
    } else if (posn == POS_RFID)
    {
       card_disconnect();
-      printer_queue_cmd(0x0A025000);    // Disengage contactless
+      eth_printer_queue_cmd(0x0A025000);        // Disengage contactless
    }
    if (posn < 0)
    {                            // not in machine
@@ -1221,7 +1238,7 @@ const char *moveto(int newposn, ajl_t o)
       else
       {
          status = "Loading card";
-         printer_queue_cmd(0x04020000 + newposn);       // Load
+         card_load(newposn, 0, 0, 0);
       }
       client_tx(j_new(), o);
    } else if (newposn >= 0)
@@ -1234,7 +1251,7 @@ const char *moveto(int newposn, ajl_t o)
          status = "RFID encoding";
       if (newposn == POS_REJECT)
          status = "Reject card";
-      printer_queue_cmd(0x05020000 + newposn);  // Move
+      eth_printer_queue_cmd(0x05020000 + newposn);      // Move
    }
    posn = newposn;
    if (posn == POS_IC)
@@ -1313,11 +1330,12 @@ char *job(const char *from)
    get_counters(j);
    get_settings(j);
    get_info(j);
-
    check_position();
-   if (rxerr)
-      j_store_true(j, "wait");
    client_tx(j, o);
+
+   // TODO testing
+   card_load(POS_PRINT, 0, 0, 0);       // TODO
+
    check_status(o);
    check_position();
    if (posn >= 0)
@@ -1648,7 +1666,7 @@ char *job(const char *from)
                   {
                      status = "Second side";
                      client_tx(j_new(), o);
-                     printer_queue_cmd(printed ? 0x07021000 : 0x05021000);      // Retransfer and flip if printed, else just flip
+                     eth_printer_queue_cmd(printed ? 0x07021000 : 0x05021000);  // Retransfer and flip if printed, else just flip
                   } else
                   {
                      status = "First side";
@@ -1685,18 +1703,18 @@ char *job(const char *from)
                      else
                      {          // UV printed separately
                         if (printed & 0x0F)
-                           printer_queue_cmd(0x06020000 + (printed & 0x0F));    // Non UV, if any
+                           eth_printer_queue_cmd(0x06020000 + (printed & 0x0F));        // Non UV, if any
                         if (printed & 0x40)
                         {       // UV
                            if (printed & 0x0F)
                            {
                               status = "Printing";
                               client_tx(j_new(), o);
-                              printer_queue_cmd(0x07020000);    // first transfer of non UV
+                              eth_printer_queue_cmd(0x07020000);        // first transfer of non UV
                            }
                            status = "UV";
                            client_tx(j_new(), o);
-                           printer_queue_cmd(0x06020000 + (printed & 0x40));    // UV print
+                           eth_printer_queue_cmd(0x06020000 + (printed & 0x40));        // UV print
                         }
                      }
                   }
