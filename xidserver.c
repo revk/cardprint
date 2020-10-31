@@ -222,7 +222,7 @@ static void dump(void *buf, size_t len, const char *tag)
       for (i = b; i < b + 16; i++)
          if (i >= len)
             fputc(' ', stderr);
-         else if (((unsigned char *) buf)[i] >= ' ' && ((unsigned char *) buf)[i] <= 0x7F)
+         else if (((unsigned char *) buf)[i] >= ' ' && ((unsigned char *) buf)[i] <= 0x7E)
             fputc(((unsigned char *) buf)[i], stderr);
          else
             fputc('.', stderr);
