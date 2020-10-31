@@ -254,11 +254,15 @@ typedef struct {
    void *buf;                   // The buffer for tx or rx of bulk data
    int len;                     // The size of buffer (how much to request if rx)
    int *rxlen;                  // Where to store the rx size
+   unsigned char to;            // timeout
    unsigned int nodump:1;       // Don't dump
 } usb_txn_t;
 #define	usb_txn(...) usb_txn_opts((usb_txn_t){__VA_ARGS__})
 const char *usb_txn_opts(usb_txn_t o)
 {
+   int to = o.to * 1000;
+   if (!to)
+      to = 1000;
    if (dodump)
       o.nodump = 0;
    if (!usb)
@@ -274,7 +278,7 @@ const char *usb_txn_opts(usb_txn_t o)
           txsize = 0;
       while (try--)
       {
-         if ((r = libusb_bulk_transfer(usb, 2, cmd, 31, &txsize, 1000)) != LIBUSB_ERROR_PIPE)
+         if ((r = libusb_bulk_transfer(usb, 2, cmd, 31, &txsize, to)) != LIBUSB_ERROR_PIPE)
             break;
          libusb_clear_halt(usb, 2);
       }
@@ -293,7 +297,7 @@ const char *usb_txn_opts(usb_txn_t o)
          int try = 10;
          while (try--)
          {
-            if ((r = libusb_bulk_transfer(usb, 0x81, o.buf, o.len, &len, 1000)) != LIBUSB_ERROR_PIPE)
+            if ((r = libusb_bulk_transfer(usb, 0x81, o.buf, o.len, &len, to)) != LIBUSB_ERROR_PIPE)
                break;
             libusb_clear_halt(usb, 0x81);
          }
@@ -308,7 +312,7 @@ const char *usb_txn_opts(usb_txn_t o)
          int try = 10;
          while (try--)
          {
-            if ((r = libusb_bulk_transfer(usb, 2, o.buf, o.len, &len, 1000)) != LIBUSB_ERROR_PIPE)
+            if ((r = libusb_bulk_transfer(usb, 2, o.buf, o.len, &len, to)) != LIBUSB_ERROR_PIPE)
                break;
             libusb_clear_halt(usb, 2);
          }
@@ -325,7 +329,7 @@ const char *usb_txn_opts(usb_txn_t o)
           rxsize = 0;
       while (try--)
       {
-         if ((r = libusb_bulk_transfer(usb, 0x81, status, 13, &rxsize, 30000)) != LIBUSB_ERROR_PIPE)
+         if ((r = libusb_bulk_transfer(usb, 0x81, status, 13, &rxsize, to)) != LIBUSB_ERROR_PIPE)
             break;
          libusb_clear_halt(usb, 0x81);
       }
@@ -611,7 +615,7 @@ const char *usb_card_load(unsigned char newposn, unsigned char immediate, unsign
 {
    if (usb_ready())
       return error;
- if (usb_txn(0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:newposn))
+ if (usb_txn(0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
       return error;
    posn = newposn;
    return error;
@@ -621,7 +625,7 @@ const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsign
 {
    if (usb_ready())
       return error;
- if (usb_txn(0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7:newposn))
+ if (usb_txn(0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:30))
       return error;
    posn = newposn;
    return error;
@@ -678,13 +682,92 @@ const char *usb_rfid_disengage(void)
 
 const char *usb_mag_iso_encode(j_t j)
 {
-   // TODO
+   status = "Encoding";
+   client_tx(j_create());
+   moveto(POS_MAG);
+   if (usb_ready())
+      return error;
+   unsigned char temp[76 + 37 + 104 + 6];
+   unsigned char tags[3] = { };
+   int p = 0;
+   int c = 0;
+   void encode(unsigned char tag, unsigned char max, j_t j) {
+      if (!j_isstring(j) || tag < 0xA0 || tag > 0xCF)
+         return;
+      const char *v = j_val(j);
+      int len = j_len(j);
+      if (len > 64)
+         error = "Mag track too long";
+      else
+      {
+         tags[(tag >> 4) - 0x0A] = tag;
+         temp[p++] = tag;
+         temp[p++] = len;
+         if ((tag & 0xF) == 6)
+            for (int q = 0; q < len; q++)
+               temp[p++] = ((v[q] & 0x3F) ^ 0x20);
+         else
+            for (int q = 0; q < len; q++)
+               temp[p++] = (v[q] & 0xF);
+         c++;
+      }
+   }
+   if (j_isstring(j))
+      encode(0xB4, 37, j);
+   else if (j_isarray(j))
+   {
+      encode(0xA6, 76, j_index(j, 0));
+      encode(0xB4, 37, j_index(j, 1));
+      encode(0xC4, 104, j_index(j, 2));
+   }
+ usb_txn(0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len:p);
    return error;
 }
 
 const char *usb_mag_iso_read(j_t j)
 {
-   // TODO
+   j_array(j);
+   j_extend(j, 3);
+   status = "Reading";
+   client_tx(j_create());
+   moveto(POS_MAG);
+   if (usb_ready())
+      return error;
+   char rx[100];
+   int rxlen = 0;
+   void decode(void) {
+      int p = 0;
+      while (p < rxlen)
+      {
+         if (p + 2 > rxlen)
+            break;
+         if (rx[p] < 0xA0 || rx[p] > 0xCF)
+            break;
+         int track = (rx[p] >> 4) - 0xA;
+         int bits = (rx[p] & 0xF);
+         int q = p + 2;
+         p = p + 2 + rx[p + 1];
+         if (p > rxlen)
+            p = rxlen;
+         char temp[256];
+         int z = 0;
+         if (bits == 7)
+            temp[z++] = rx[q++];
+         else if (bits == 6)
+            while (q < p)
+               temp[z++] = (rx[q++] & 0x3F) + 0x20;
+         else if (bits == 4)
+            while (q < p)
+               temp[z++] = (rx[q++] & 0xF) + '0';
+         j_stringn(j_index(j, track), temp, z);
+      }
+   }
+ if (!usb_txn(0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76 + 2, rxlen: &rxlen, to:60))
+      decode();
+ if (!usb_txn(0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37 + 2, rxlen: &rxlen, to:60))
+      decode();
+ if (!usb_txn(0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104 + 2, rxlen: &rxlen, to:60))
+      decode();
    return error;
 }
 
@@ -1248,7 +1331,7 @@ const char *eth_rfid_disengage(void)
 
 const char *eth_mag_iso_encode(j_t j)
 {
-   unsigned char temp[66 * 3];
+   unsigned char temp[76 + 37 + 104 + 6];
    int p = 0;
    int c = 0;
    void encode(unsigned char tag, j_t j) {
@@ -1269,7 +1352,9 @@ const char *eth_mag_iso_encode(j_t j)
             for (int q = 0; q < len; q++)
                temp[p++] = (v[q] & 0xF);
          c++;
-   }} if (j_isstring(j))
+      }
+   }
+   if (j_isstring(j))
       encode(0x24, j);
    else if (j_isarray(j))
    {
@@ -1503,8 +1588,8 @@ const char *mag_iso_encode(j_t j)
 const char *mag_iso_read(j_t j)
 {
    if (usb)
-      return usb_mag_iso_encode(j);
-   return eth_mag_iso_encode(j);
+      return usb_mag_iso_read(j);
+   return eth_mag_iso_read(j);
 }
 
 const char *mag_jis_encode(j_t j)
@@ -1517,8 +1602,8 @@ const char *mag_jis_encode(j_t j)
 const char *mag_jis_read(j_t j)
 {
    if (usb)
-      return usb_mag_jis_encode(j);
-   return eth_mag_jis_encode(j);
+      return usb_mag_jis_read(j);
+   return eth_mag_jis_read(j);
 }
 
 const char *send_panel(unsigned char panel, unsigned int len, void *data)
