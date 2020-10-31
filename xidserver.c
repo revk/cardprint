@@ -377,7 +377,9 @@ const char *usb_ready(int needcards)
          if (debug)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
-         client_tx(j_create());
+         j_t j = j_create();
+         j_store_true(j, "wait"); // Add any as not added for No cards otherwise
+         client_tx(j);
       }
       usleep(100000);
    }
@@ -1914,7 +1916,7 @@ const char *client_tx(j_t j)
       j_store_string(j, "status", msg(rxerr));
    else if (status)
       j_store_string(j, "status", status);
-   if (rxerr)
+   if (rxerr && rxerr != 0x0002D000)
       j_store_true(j, "wait");
    if (count)
       j_store_int(j, "count", count);
