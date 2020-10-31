@@ -505,10 +505,15 @@ const char *usb_get_settings(j_t j)
 
 const char *usb_set_settings(j_t j)
 {
+   unsigned char rx[64];
+   int rxlen = 0;
+ if (usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+      return error;
    unsigned char tx[32];
    memset(tx, 0xff, 32);
    tx[0] = 0x28;
    tx[1] = 0x1E;                // Length I expect
+   int change = 0;
    for (int i = 0; i < SETTINGS; i++)
       if (settings[i].wpos < 32)
       {
@@ -535,10 +540,14 @@ const char *usb_set_settings(j_t j)
          warnx("setting %s=%s (%d) @%d", v, s, n, settings[i].wpos);
          if (!*s)
             error = "Bad setting";
-         else
+         else if (rx[settings[i].rpos] != n)
+         {
             tx[settings[i].wpos] = n;
+            change++;
+         }
       }
- usb_txn(0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
+   if (change)
+    usb_txn(0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
    return error;
 }
 
