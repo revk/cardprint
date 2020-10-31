@@ -1989,228 +1989,192 @@ char *job(const char *from)
    j = j_create();
    while (!(ers = j_recv(j, i)))
    {
-      if (j_isbool(j) && !j_istrue(j))
+      if (!j_isobject(j))
          break;                 // Sending null exists
-      if (j_isobject(j))
+      j_t print = j_find(j, "print");
+      if (print && (j_isobject(print) || j_isarray(print)))
       {
-         j_t print = j_find(j, "print");
-         if (print && (j_isobject(print) || j_isarray(print)))
-         {
-            j_detach(print);
-            if (debug)
-               warnx("Print command not dumped");
-         }
+         j_detach(print);
          if (debug)
-            j_err(j_write_pretty(j, stderr));
-         j_t cmd = NULL;
-         if ((cmd = j_find(j, "settings")))
-            set_settings(cmd);
-         if ((cmd = j_find(j, "jis")))
+            warnx("Print command not dumped");
+      }
+      if (debug)
+         j_err(j_write_pretty(j, stderr));
+      j_t cmd = NULL;
+      if ((cmd = j_find(j, "settings")))
+         set_settings(cmd);
+      if ((cmd = j_find(j, "jis")))
+      {
+         j_t j = j_create();
+         if (j_isstring(cmd))
          {
+            mag_jis_encode(cmd);
+            if (!error)
+               j_store_true(j, "mag");
+         } else if (j_isnull(cmd) || j_istrue(cmd))
+            mag_jis_read(j_store_array(j, "mag"));
+         client_tx(j);
+      }
+      if ((cmd = j_find(j, "mag")))
+      {
+         j_t j = j_create();
+         if (j_isarray(cmd) || j_isstring(cmd))
+         {
+            mag_iso_encode(cmd);
+            if (!error)
+               j_store_true(j, "mag");
+         } else if (j_isnull(cmd) || j_istrue(cmd))
+            mag_iso_read(j_store_array(j, "mag"));
+         client_tx(j);
+      }
+      if ((cmd = j_find(j, "ic")))
+      {
+         moveto(POS_IC);
+         if (j_isstring(cmd))
+         {
+            unsigned char *tx = NULL;
+            int txlen = j_base16d(j_val(cmd), &tx);;
+            unsigned char rx[256];
+            DWORD rxlen = sizeof(rx);
+            card_txn(txlen, tx, &rxlen, rx);
+            warnx("Txn done len %ld", rxlen);
             j_t j = j_create();
-            if (j_isstring(cmd))
-            {
-               mag_jis_encode(cmd);
-               if (!error)
-                  j_store_true(j, "mag");
-            } else if (j_isnull(cmd) || j_istrue(cmd))
-               mag_jis_read(j_store_array(j, "mag"));
+            j_store_string(j, "ic", j_base16(rxlen, rx));
+            client_tx(j);
+            warnx("ic done");
+         }
+      }
+      if ((cmd = j_find(j, "rfid")))
+      {
+         moveto(POS_RFID);
+         if (j_isstring(cmd))
+         {
+            unsigned char *tx = NULL;
+            int txlen = j_base16d(j_val(cmd), &tx);;
+            unsigned char rx[256];
+            DWORD rxlen = sizeof(rx);
+            card_txn(txlen, tx, &rxlen, rx);
+            j_t j = j_create();
+            j_store_string(j, "rfid", j_base16(rxlen, rx));
             client_tx(j);
          }
-         if ((cmd = j_find(j, "mag")))
+      }
+      if ((cmd = j_find(j, "mifare")))
+      {
+         moveto(POS_RFID);
+         // TODO
+      }
+      if (print)
+      {
+         if (j_istrue(print) || j_isnull(print))
          {
-            j_t j = j_create();
-            if (j_isarray(cmd) || j_isstring(cmd))
-            {
-               mag_iso_encode(cmd);
-               if (!error)
-                  j_store_true(j, "mag");
-            } else if (j_isnull(cmd) || j_istrue(cmd))
-               mag_iso_read(j_store_array(j, "mag"));
-            client_tx(j);
-         }
-         if ((cmd = j_find(j, "ic")))
+            moveto(POS_PRINT);  // ready to print
+            client_wait("Ready");
+         } else
          {
-            moveto(POS_IC);
-            if (j_isstring(cmd))
-            {
-               unsigned char *tx = NULL;
-               int txlen = j_base16d(j_val(cmd), &tx);;
-               unsigned char rx[256];
-               DWORD rxlen = sizeof(rx);
-               card_txn(txlen, tx, &rxlen, rx);
-               warnx("Txn done len %ld", rxlen);
-               j_t j = j_create();
-               j_store_string(j, "ic", j_base16(rxlen, rx));
-               client_tx(j);
-               warnx("ic done");
-            }
-         }
-         if ((cmd = j_find(j, "rfid")))
-         {
-            moveto(POS_RFID);
-            if (j_isstring(cmd))
-            {
-               unsigned char *tx = NULL;
-               int txlen = j_base16d(j_val(cmd), &tx);;
-               unsigned char rx[256];
-               DWORD rxlen = sizeof(rx);
-               card_txn(txlen, tx, &rxlen, rx);
-               j_t j = j_create();
-               j_store_string(j, "rfid", j_base16(rxlen, rx));
-               client_tx(j);
-            }
-         }
-         if ((cmd = j_find(j, "mifare")))
-         {
-            moveto(POS_RFID);
-            // TODO
-         }
-         if (print)
-         {
-            if (j_istrue(print) || j_isnull(print))
-	    {
-               moveto(POS_PRINT);       // ready to print
-	       client_wait("Ready");
-	    }
-            else
-            {
-               unsigned char printed = 0;
-               unsigned char side = 0;
-               const char *print_side(j_t panel) {
+            unsigned char printed = 0;
+            unsigned char side = 0;
+            const char *print_side(j_t panel) {
+               if (error)
+                  return error;
+               if (!panel)
+                  return error;
+               unsigned char found = 0;
+               unsigned char *data[8] = { };
+               const char *add(const char *tag1, const char *tag2, int layer) {
                   if (error)
                      return error;
-                  if (!panel)
+                  const char *d = j_get(panel, tag1);
+                  if (!d)
+                     d = j_get(panel, tag2);
+                  if (!d)
                      return error;
-                  unsigned char found = 0;
-                  unsigned char *data[8] = { };
-                  const char *add(const char *tag1, const char *tag2, int layer) {
-                     if (error)
-                        return error;
-                     const char *d = j_get(panel, tag1);
-                     if (!d)
-                        d = j_get(panel, tag2);
-                     if (!d)
-                        return error;
-                     if (strncasecmp(d, "data:image/png;base64,", 22))
-                        return error = "Image data must be png base64";
-                     unsigned char *png = NULL;
-                     int l = j_base64d(d + 22, &png);
-                     FILE *f = fmemopen(png, l, "rb");
-                     const char *process(void) {
-                        if (png_sig_cmp(png, 0, l))
-                           return error = "Not PNG";
-                        png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-                        if (!png_ptr)
-                           return error = "Bad PNG init";
-                        png_infop info_ptr = png_create_info_struct(png_ptr);
-                        png_infop end_info = png_create_info_struct(png_ptr);
-                        if (!info_ptr || !end_info)
+                  if (strncasecmp(d, "data:image/png;base64,", 22))
+                     return error = "Image data must be png base64";
+                  unsigned char *png = NULL;
+                  int l = j_base64d(d + 22, &png);
+                  FILE *f = fmemopen(png, l, "rb");
+                  const char *process(void) {
+                     if (png_sig_cmp(png, 0, l))
+                        return error = "Not PNG";
+                     png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+                     if (!png_ptr)
+                        return error = "Bad PNG init";
+                     png_infop info_ptr = png_create_info_struct(png_ptr);
+                     png_infop end_info = png_create_info_struct(png_ptr);
+                     if (!info_ptr || !end_info)
+                     {
+                        png_destroy_read_struct(&png_ptr, NULL, NULL);
+                        return error = "Bad PNG init";
+                     }
+                     png_init_io(png_ptr, f);
+                     png_read_info(png_ptr, info_ptr);
+                     unsigned int width,
+                      height;
+                     int bit_depth,
+                      color_type,
+                      interlace_type,
+                      compression_type,
+                      filter_type;
+                     png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, &interlace_type, &compression_type, &filter_type);
+                     int dx = (cols - (int) width) / 2,
+                         dy = (rows - (int) height) / 2;
+                     if (debug)
+                        warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag1, side, width, height, dx, dy, cols, rows);
+                     png_set_expand(png_ptr);   // Expand palette, etc
+                     static const png_color_16 bg = { 255, 65535, 65535, 65535, 65535 };
+                     png_set_background(png_ptr, &bg, PNG_BACKGROUND_GAMMA_FILE, 0, 1.0);
+                     png_set_strip_16(png_ptr); // Reduce to 8 bit
+                     png_set_packing(png_ptr);  // Unpack
+                     if (layer)
+                        png_set_rgb_to_gray(png_ptr, 1, 54.0 / 256, 183.0 / 256);
+                     else
+                        png_set_gray_to_rgb(png_ptr);   // RGB
+                     png_set_strip_alpha(png_ptr);
+                     png_set_interlace_handling(png_ptr);
+                     // Gamma adjust
+                     const char *v = j_get(panel, "@gamma");
+                     if (v)
+                     {
+                        double screen_gamma = strtod(v, NULL);
+                        if (screen_gamma)
                         {
-                           png_destroy_read_struct(&png_ptr, NULL, NULL);
-                           return error = "Bad PNG init";
+                           double gamma = 0;
+                           if (png_get_gAMA(png_ptr, info_ptr, &gamma))
+                              png_set_gamma(png_ptr, screen_gamma, gamma);
+                           else
+                              png_set_gamma(png_ptr, screen_gamma, 1);
                         }
-                        png_init_io(png_ptr, f);
-                        png_read_info(png_ptr, info_ptr);
-                        unsigned int width,
-                         height;
-                        int bit_depth,
-                         color_type,
-                         interlace_type,
-                         compression_type,
-                         filter_type;
-                        png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, &interlace_type, &compression_type, &filter_type);
-                        int dx = (cols - (int) width) / 2,
-                            dy = (rows - (int) height) / 2;
-                        if (debug)
-                           warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag1, side, width, height, dx, dy, cols, rows);
-                        png_set_expand(png_ptr);        // Expand palette, etc
-                        static const png_color_16 bg = { 255, 65535, 65535, 65535, 65535 };
-                        png_set_background(png_ptr, &bg, PNG_BACKGROUND_GAMMA_FILE, 0, 1.0);
-                        png_set_strip_16(png_ptr);      // Reduce to 8 bit
-                        png_set_packing(png_ptr);       // Unpack
-                        if (layer)
-                           png_set_rgb_to_gray(png_ptr, 1, 54.0 / 256, 183.0 / 256);
-                        else
-                           png_set_gray_to_rgb(png_ptr);        // RGB
-                        png_set_strip_alpha(png_ptr);
-                        png_set_interlace_handling(png_ptr);
-                        // Gamma adjust
-                        const char *v = j_get(panel, "@gamma");
-                        if (v)
+                     }
+                     png_read_update_info(png_ptr, info_ptr);
+                     if (!layer)
+                     {          // CMY
+                        png_bytep image = malloc(4 * width);
+                        for (int layer = 0; layer < 3; layer++)
                         {
-                           double screen_gamma = strtod(v, NULL);
-                           if (screen_gamma)
-                           {
-                              double gamma = 0;
-                              if (png_get_gAMA(png_ptr, info_ptr, &gamma))
-                                 png_set_gamma(png_ptr, screen_gamma, gamma);
-                              else
-                                 png_set_gamma(png_ptr, screen_gamma, 1);
-                           }
-                        }
-                        png_read_update_info(png_ptr, info_ptr);
-                        if (!layer)
-                        {       // CMY
-                           png_bytep image = malloc(4 * width);
-                           for (int layer = 0; layer < 3; layer++)
-                           {
-                              data[layer] = malloc(rows * cols);
-                              memset(data[layer], 0, rows * cols);
-                           }
-                           for (int r = 0; r < height; r++)
-                           {
-                              int y = r + dy;
-                              png_read_row(png_ptr, image, NULL);
-                              if (y >= 0 && y < rows)
-                                 for (int c = 0; c < width; c++)
-                                 {
-                                    int x = c + dx;
-                                    if (x >= 0 && x < cols)
-                                    {
-                                       int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
-                                       png_bytep p = image + 3 * c;
-                                       data[2][o] = *p++ ^ 0xFF;
-                                       data[1][o] = *p++ ^ 0xFF;
-                                       data[0][o] = *p++ ^ 0xFF;
-                                    }
-                                 }
-                           }
-                           for (int layer = 0; layer < 3; layer++)
-                           {
-                              int z;
-                              for (z = 0; z < rows * cols && !data[layer][z]; z++);
-                              if (z == rows * cols)
-                              { // Blank
-                                 free(data[layer]);
-                                 data[layer] = NULL;
-                              } else
-                                 found |= (1 << layer);
-                           }
-                           free(image);
-                        } else
-                        {       // K or U
-                           png_bytep image = malloc(width);
                            data[layer] = malloc(rows * cols);
                            memset(data[layer], 0, rows * cols);
-                           for (int r = 0; r < height; r++)
-                           {
-                              int y = r + dy;
-                              png_read_row(png_ptr, image, NULL);
-                              if (y >= 0 && y < rows)
-                                 for (int c = 0; c < width; c++)
+                        }
+                        for (int r = 0; r < height; r++)
+                        {
+                           int y = r + dy;
+                           png_read_row(png_ptr, image, NULL);
+                           if (y >= 0 && y < rows)
+                              for (int c = 0; c < width; c++)
+                              {
+                                 int x = c + dx;
+                                 if (x >= 0 && x < cols)
                                  {
-                                    int x = c + dx;
-                                    if (x >= 0 && x < cols)
-                                    {
-                                       int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
-                                       if (layer == 3)
-                                          data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF);      // Black
-                                       else
-                                          data[layer][o] = image[c] ^ 0xFF;
-                                    }
+                                    int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
+                                    png_bytep p = image + 3 * c;
+                                    data[2][o] = *p++ ^ 0xFF;
+                                    data[1][o] = *p++ ^ 0xFF;
+                                    data[0][o] = *p++ ^ 0xFF;
                                  }
-                           }
+                              }
+                        }
+                        for (int layer = 0; layer < 3; layer++)
+                        {
                            int z;
                            for (z = 0; z < rows * cols && !data[layer][z]; z++);
                            if (z == rows * cols)
@@ -2219,103 +2183,135 @@ char *job(const char *from)
                               data[layer] = NULL;
                            } else
                               found |= (1 << layer);
-                           free(image);
                         }
-                        png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-                        return error;
+                        free(image);
+                     } else
+                     {          // K or U
+                        png_bytep image = malloc(width);
+                        data[layer] = malloc(rows * cols);
+                        memset(data[layer], 0, rows * cols);
+                        for (int r = 0; r < height; r++)
+                        {
+                           int y = r + dy;
+                           png_read_row(png_ptr, image, NULL);
+                           if (y >= 0 && y < rows)
+                              for (int c = 0; c < width; c++)
+                              {
+                                 int x = c + dx;
+                                 if (x >= 0 && x < cols)
+                                 {
+                                    int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
+                                    if (layer == 3)
+                                       data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF); // Black
+                                    else
+                                       data[layer][o] = image[c] ^ 0xFF;
+                                 }
+                              }
+                        }
+                        int z;
+                        for (z = 0; z < rows * cols && !data[layer][z]; z++);
+                        if (z == rows * cols)
+                        {       // Blank
+                           free(data[layer]);
+                           data[layer] = NULL;
+                        } else
+                           found |= (1 << layer);
+                        free(image);
                      }
-                     process();
-                     fclose(f);
-                     free(png);
+                     png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
                      return error;
                   }
-                  add("C", "CMY", 0);
-                  add("K", "K", 3);
-                  add("P", "PO", 5);
-                  add("U", "UV", 6);
-                  if (found)
-                  {
-                     moveto(POS_PRINT); // ready to print
-                     if (side)
-                     {
-                        if (printed)
-                           transfer_flip(0);
-                        else
-                           card_move(POS_PRINT, 0, 1, 0);       // Flip no transfer
-                        client_wait("Second side");
-                     } else
-                        client_wait("First side");
-                     printed = 0;
-                     for (int p = 0; p < 8; p++)
-                        if ((p < 3 && (found & 7)) || (found & (1 << p)))
-                        {       // Send panel
-                           send_panel(p, rows * cols, data[p]);
-                           printed |= (1 << p);
-                        }
-                     if (printed)
-                     {
-                        if (j_test(panel, "uvsingle", 0))
-                           print_panels(printed, 0, 0); // All in one
-                        else
-                        {       // UV printed separately
-                           if (printed & 0x0F)
-                              print_panels(printed & 0x0F, 0, 0);       // Non UV
-                           if (printed & 0x40)
-                           {    // UV
-                              if (printed & 0x0F)
-                                 transfer_return(0);
-                              client_wait("UV");
-                              print_panels(printed & 0x40, 0, 0);       // UV print
-                           }
-                        }
-                     }
-                     get_status();
-                  }
-                  for (int i = 0; i < 8; i++)
-                     if (data[i])
-                        free(data[i]);
-                  side++;
+                  process();
+                  fclose(f);
+                  free(png);
                   return error;
                }
-               if (j_isobject(print))
-                  print_side(print);
-               else if (j_isarray(print))
+               add("C", "CMY", 0);
+               add("K", "K", 3);
+               add("P", "PO", 5);
+               add("U", "UV", 6);
+               if (found)
                {
-                  print_side(j_index(print, 0));
-                  print_side(j_index(print, 1));
+                  moveto(POS_PRINT);    // ready to print
+                  if (side)
+                  {
+                     if (printed)
+                        transfer_flip(0);
+                     else
+                        card_move(POS_PRINT, 0, 1, 0);  // Flip no transfer
+                     client_wait("Second side");
+                  } else
+                     client_wait("First side");
+                  printed = 0;
+                  for (int p = 0; p < 8; p++)
+                     if ((p < 3 && (found & 7)) || (found & (1 << p)))
+                     {          // Send panel
+                        send_panel(p, rows * cols, data[p]);
+                        printed |= (1 << p);
+                     }
+                  if (printed)
+                  {
+                     if (j_test(panel, "uvsingle", 0))
+                        print_panels(printed, 0, 0);    // All in one
+                     else
+                     {          // UV printed separately
+                        if (printed & 0x0F)
+                           print_panels(printed & 0x0F, 0, 0);  // Non UV
+                        if (printed & 0x40)
+                        {       // UV
+                           if (printed & 0x0F)
+                              transfer_return(0);
+                           client_wait("UV");
+                           print_panels(printed & 0x40, 0, 0);  // UV print
+                        }
+                     }
+                  }
+                  get_status();
                }
-               if (printed)
-                  count++;
-               while (queue && !error)
-                  eth_rx_check();
-               if (printed)
-               {
-                  client_tx(j_create());
-                  transfer_eject(0);
-                  status = "Printed";
-               } else
-               {
-                  moveto(POS_EJECT);    // Done anyway
-                  status = "Unprinted";
-               }
-               get_status();
-               client_tx(j_create());
-               break;
+               for (int i = 0; i < 8; i++)
+                  if (data[i])
+                     free(data[i]);
+               side++;
+               return error;
             }
-         } else if ((cmd = j_find(j, "reject")))
-         {
-            if (posn >= 0)
-               moveto(POS_REJECT);
-            get_status();
-            client_tx(j_create());
-            break;
-         } else if ((cmd = j_find(j, "eject")))
-         {
-            moveto(POS_EJECT);
+            if (j_isobject(print))
+               print_side(print);
+            else if (j_isarray(print))
+            {
+               print_side(j_index(print, 0));
+               print_side(j_index(print, 1));
+            }
+            if (printed)
+               count++;
+            while (queue && !error)
+               eth_rx_check();
+            if (printed)
+            {
+               client_tx(j_create());
+               transfer_eject(0);
+               status = "Printed";
+            } else
+            {
+               moveto(POS_EJECT);       // Done anyway
+               status = "Unprinted";
+            }
             get_status();
             client_tx(j_create());
             break;
          }
+      } else if ((cmd = j_find(j, "reject")))
+      {
+         if (posn >= 0)
+            moveto(POS_REJECT);
+         get_status();
+         client_tx(j_create());
+         break;
+      } else if ((cmd = j_find(j, "eject")))
+      {
+         moveto(POS_EJECT);
+         get_status();
+         client_tx(j_create());
+         break;
       }
       get_status();
       client_tx(j_create());
