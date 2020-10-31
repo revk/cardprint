@@ -344,8 +344,7 @@ const char *usb_txn_opts(usb_txn_t o)
          return error = "Bad USB status response";
       if (status[4] + (status[5] << 8) + (status[6] << 16) + (status[7] << 24) != tag)
          return error = "Bad USB status tag";
-      if (status[8] || status[9] || status[10] || status[11])
-         return error = "Bad USB status residue";
+      //if (status[8] || status[9] || status[10] || status[11]) return error = "Bad USB status residue";
       if (status[12])
          return "";
    }
@@ -720,7 +719,7 @@ const char *usb_mag_iso_encode(j_t j)
       encode(0xB4, 37, j_index(j, 1));
       encode(0xC4, 104, j_index(j, 2));
    }
- usb_txn(0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len:p);
+ usb_txn(0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len: p, to:60);
    return error;
 }
 
@@ -737,8 +736,10 @@ const char *usb_mag_iso_read(j_t j)
    int rxlen = 0;
    void decode(void) {
       int p = 0;
+      warnx("rxlen=%d", rxlen);
       while (p < rxlen)
       {
+         warnx("p=%d %02X", p, rx[p]);
          if (p + 2 > rxlen)
             break;
          if (rx[p] < 0xA0 || rx[p] > 0xCF)
@@ -746,13 +747,15 @@ const char *usb_mag_iso_read(j_t j)
          int track = (rx[p] >> 4) - 0xA;
          int bits = (rx[p] & 0xF);
          int q = p + 2;
-         p = p + 2 + rx[p + 1];
+         p = q + rx[p + 1];
          if (p > rxlen)
             p = rxlen;
+         warnx("track=%d bits=%d len=%d", track, bits, p - q);
          char temp[256];
          int z = 0;
          if (bits == 7)
-            temp[z++] = rx[q++];
+            while (q < p)
+               temp[z++] = rx[q++];
          else if (bits == 6)
             while (q < p)
                temp[z++] = (rx[q++] & 0x3F) + 0x20;
@@ -762,12 +765,13 @@ const char *usb_mag_iso_read(j_t j)
          j_stringn(j_index(j, track), temp, z);
       }
    }
- if (!usb_txn(0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76 + 2, rxlen: &rxlen, to:60))
+ if (!usb_txn(0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76, rxlen: &rxlen, to:60))
       decode();
- if (!usb_txn(0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37 + 2, rxlen: &rxlen, to:60))
+ if (!usb_txn(0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37, rxlen: &rxlen, to:60))
       decode();
- if (!usb_txn(0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104 + 2, rxlen: &rxlen, to:60))
+ if (!usb_txn(0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104, rxlen: &rxlen, to:60))
       decode();
+   // TODO Not coping if one of these txns fails...
    return error;
 }
 
@@ -1820,8 +1824,6 @@ const char *eth_tx_check(void)
 
 const char *moveto(int newposn)
 {
-   if (debug)
-      warnx("move %d to %d %s", posn, newposn, error ? : "");
    if (error || posn == newposn)
       return error;             // Nothing to do
    if (posn == POS_IC)
@@ -1853,10 +1855,7 @@ const char *moveto(int newposn)
       else if (newposn == POS_REJECT)
          error = "Cannot reject card, not loaded";
       else
-      {
-         status = "Loading card";
          card_load(newposn, 0, 0, 0);
-      }
       client_tx(j_create());
    } else if (newposn >= 0)
    {
@@ -1995,25 +1994,27 @@ char *job(const char *from)
          set_settings(cmd);
       if ((cmd = j_find(j, "jis")))
       {
+         j_t j = j_create();
          if (j_isstring(cmd))
-            mag_jis_encode(cmd);
-         else if (j_isnull(cmd) || j_istrue(cmd))
          {
-            j_t j = j_create();
+            mag_jis_encode(cmd);
+            if (!error)
+               j_store_true(j, "mag");
+         } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_jis_read(j_store_array(j, "mag"));
-            client_tx(j);
-         }
+         client_tx(j);
       }
       if ((cmd = j_find(j, "mag")))
       {
-         if (j_isarray(cmd))
-            mag_iso_encode(cmd);
-         else if (j_isnull(cmd) || j_istrue(cmd))
+         j_t j = j_create();
+         if (j_isarray(cmd) || j_isstring(cmd))
          {
-            j_t j = j_create();
+            mag_iso_encode(cmd);
+            if (!error)
+               j_store_true(j, "mag");
+         } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_iso_read(j_store_array(j, "mag"));
-            client_tx(j);
-         }
+         client_tx(j);
       }
       if ((cmd = j_find(j, "ic")))
       {
