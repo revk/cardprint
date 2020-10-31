@@ -40,51 +40,53 @@
 
 typedef struct setting_s setting_t;
 struct setting_s {
-   unsigned char tag;
+   unsigned char rpos;
+   unsigned char wpos;
+   unsigned char etag;
    const char *name;
    const char *vals;
    int mul;
 };
 
 const setting_t settings[] = {  // Ethernet and USB settings
-   { 0x14, "card-thickness", "standard//thin" },
-   { 0x16, "buzzer", "true/false" },
-   { 0x18, "hr-power-save", "//////45/60/false" },
-   { 0x1d, "display-mode", "counter/laminator" },
-   { 0x1e, "display-counter", "total/head/free/clean/error" },
-   { 0x1b, "display-contrast", "///0/1/2" },
-   { 0x1f, "security-lock", "false/true" },
-   { 0x28, "retry-count", "0/1/2/3" },
-   { 0x29, "jis-type", "loco/hico" },
-   { 0x2a, "iso-type", "loco/hico" },
-   { 0x33, "film-type", "1000/750" },
-   { 0x46, "k-level", "//-1/0/1/2/3" },
-   { 0x47, "k-mode", "standard/fine" },
-   { 0x48, "ymc-level", "//-1/0/1/2/3" },
-   { 0x4a, "uv-level", "//-1/0/1/2/3" },
-   { 0x4b, "po-level", "//-1/0/1/2/3}" },
-   { 0x4c, "transfer-temp", "-2/-1/0/1/2" },
-   { 0x4d, "transfer-speed-front", "/1/0/-1/-2/-3" },
-   { 0x4e, "transfer-speed-back", "/1/0/-1/-2/-3" },
-   { 0x4f, "bend-temp", "-5/-4/-3/-2///////false" },
-   { 0x50, "bend-speed", "-2/-1/0/1/2" },
-   { 0x55, "mg-peel-mode", "standard/stripe" },
-   { 0x56, "standby-mode", "front/back" },
-   { 0x5c, "hr-control", "false/true" },
-   { 0x5d, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
-   { 0x5e, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
-   { 0x5f, "backside-cool", "false/true" },
+   { 0x1A, 0x13, 0x14, "card-thickness", "standard//thin" },
+   { 0x31, 0x15, 0x16, "buzzer", "true/false" },
+   { 0x32, 0x16, 0x18, "hr-power-save", "//////45/60/false" },
+   { 0x39, 0x1A, 0x1d, "display-mode", "counter/laminator" },
+   { 0x3A, 0x1B, 0x1e, "display-counter", "total/head/free/clean/error" },
+   { 0x37, 0x18, 0x1b, "display-contrast", "///0/1/2" },
+   { 0xFF, 0xFF, 0x1f, "security-lock", "false/true" }, // not in main USB settings block
+   { 0xFF, 0xFF, 0x28, "retry-count", "0/1/2/3" },      // Not in main USB settings block
+   { 0xFF, 0xFF, 0x29, "jis-type", "loco/hico" },       // Not in main USB settings block
+   { 0xFF, 0xFF, 0x2a, "iso-type", "loco/hico" },       // not in main USB settings block
+   { 0x18, 0x11, 0x33, "film-type", "1000/750" },
+   { 0x2D, 0x0D, 0x46, "k-level", "//-1/0/1/2/3" },
+   { 0x2E, 0x0E, 0x47, "k-mode", "standard/fine" },
+   { 0x36, 0x17, 0x48, "ymc-level", "//-1/0/1/2/3" },
+   { 0x2F, 0x0F, 0x4a, "uv-level", "//-1/0/1/2/3" },
+   { 0x30, 0x10, 0x4b, "po-level", "//-1/0/1/2/3}" },
+   { 0x25, 0x04, 0x4c, "transfer-temp", "-2/-1/0/1/2" },
+   { 0x26, 0x05, 0x4d, "transfer-speed-front", "/1/0/-1/-2/-3" },
+   { 0x27, 0x06, 0x4e, "transfer-speed-back", "/1/0/-1/-2/-3" },
+   { 0x28, 0x07, 0x4f, "bend-temp", "-5/-4/-3/-2///////false" },
+   { 0x29, 0x08, 0x50, "bend-speed", "-2/-1/0/1/2" },
+   { 0x14, 0x0B, 0x55, "mg-peel-mode", "standard/stripe" },
+   { 0x1B, 0x0C, 0x56, "standby-mode", "front/back" },
+   { 0x0C, 0x12, 0x5c, "hr-control", "false/true" },
+   { 0x3C, 0x1C, 0x5d, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
+   { 0x3D, 0x1D, 0x5e, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
+   { 0x3E, 0x1E, 0x5f, "backside-cool", "false/true" },
 };
 
 #define SETTINGS (sizeof(settings)/sizeof(*settings))
 
 const setting_t info[] = {      // Ethernet info
-   { 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
-   { 0x0f, "ink-lot-number", NULL },
-   { 0x0b, "ink-available", NULL, 2 },
-   { 0x0e, "ink-total", NULL },
-   { 0x0c, "transfer-available", NULL, 10 },
-   { 0x0a, "cards-available", "true//false" },
+   { 0xFF, 0xFF, 0x0d, "ink", "YMCK////YMCKK/YMCKU" },
+   { 0xFF, 0xFF, 0x0f, "ink-lot-number", NULL },
+   { 0xFF, 0xFF, 0x0b, "ink-available", NULL, 2 },
+   { 0xFF, 0xFF, 0x0e, "ink-total", NULL },
+   { 0xFF, 0xFF, 0x0c, "transfer-available", NULL, 10 },
+   { 0xFF, 0xFF, 0x0a, "cards-available", "true//false" },
 };
 
 #define INFO (sizeof(info)/sizeof(*info))
@@ -292,7 +294,33 @@ void usb_disconnect(void)
 
 const char *usb_get_settings(j_t j)
 {
-   // TODO
+   unsigned char rx[64];
+   int rxlen = 0;
+ usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen);
+   if (error)
+      return error;
+   j = j_store_object(j, "settings");
+   int n;
+   for (int i = 0; i < SETTINGS; i++)
+      if ((n = settings[i].rpos) != 0xFF)
+      {
+         n = rx[n];
+         const char *v = settings[i].vals;
+         while (n-- && v)
+         {
+            v = strchr(v, '/');
+            if (v)
+               v++;
+         }
+         if (v)
+         {
+            const char *e = strchr(v, '/');
+            if (!e)
+               e = v + strlen(v);
+            if (e > v)
+               j_store_stringn(j, settings[i].name, v, (int) (e - v));
+         }
+      }
    return NULL;
 }
 
@@ -304,6 +332,11 @@ const char *usb_set_settings(j_t j)
 
 const char *usb_get_info(j_t j)
 {
+   unsigned char rx[44];
+   int rxlen = 0;
+ usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen);
+   if (error)
+      return error;
    // TODO
    return NULL;
 }
@@ -483,16 +516,206 @@ const char *eth_disconnect(void)
    return NULL;
 }
 
+const char *eth_tx_udp(void)
+{
+   if (error)
+      return error;
+   if (udp < 0)
+      return error = "Printer not connected (UDP)";
+   if (buflen < 16)
+      return "Bad tx";
+   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   buflen = (buflen + 3) / 4 * 4;
+   unsigned int n = buflen / 4 - 2;
+   buf[4] = (n >> 24);
+   buf[5] = (n >> 16);
+   buf[6] = (n >> 8);
+   buf[7] = (n);
+   dump(buf, buflen, "Tx UDP");
+   int l = send(udp, buf, buflen, 0);
+   if (l < 0)
+      err(1, "Tx fail");
+   return NULL;
+}
+
+const char *eth_rx_udp(void)
+{
+   if (error)
+      return error;
+   if (udp < 0)
+      return error = "Printer not connected (UDP)";
+   struct timeval timeout = { 1, 0 };
+   fd_set readfs;
+   FD_ZERO(&readfs);
+   FD_SET(udp, &readfs);
+   if (select(udp + 1, &readfs, NULL, NULL, &timeout) <= 0)
+      return NULL;
+   if (bufmax < 1024 && !(buf = realloc(buf, bufmax = 1024)))
+      errx(1, "malloc");
+   buflen = recv(udp, buf, bufmax, 0);
+   if (!buflen)
+      return error = "No reply from printer";
+   if (buflen < 0)
+      err(1, "Rx UDP fail");
+   int n = ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]) * 4 + 8;
+   dump(buf, buflen, "Rx UDP");
+   if (buflen < 16 || buflen < n || n < 16)
+      return "Bad rx length";
+   buflen = n;
+   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
+   return NULL;
+}
+
+const char *eth_tx(void)
+{                               // Raw printer send
+   if (error)
+      return error;
+   if (tcp < 0)
+      return error = "Printer not connected";
+   if (buflen < 16)
+      return error = "Bad tx";
+   queue++;
+   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   buflen = (buflen + 3) / 4 * 4;
+   unsigned int n = buflen / 4 - 2;
+   buf[4] = (n >> 24);
+   buf[5] = (n >> 16);
+   buf[6] = (n >> 8);
+   buf[7] = (n);
+   dump(buf, buflen, "Tx TCP");
+   n = 0;
+   while (n < buflen)
+   {
+      int l = 0;
+      l = write(tcp, buf + n, buflen - n);
+      if (l <= 0)
+      {
+         warn("Tx %d", (int) l);
+         return "Tx fail";
+      }
+      n += l;
+   }
+   return NULL;
+}
+
+const char *eth_rx(void)
+{                               // raw printer receive
+   if (queue)
+      queue--;
+   if (error)
+      return error;
+   if (tcp < 0)
+      rxcmd = 0;
+   buflen = 0;
+   unsigned int n = 8;
+   while (buflen < n)
+   {
+      if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
+         errx(1, "malloc");
+      int l = 0;
+      l = read(tcp, buf + buflen, n - buflen);
+      if (!l && !buflen)
+         return "Printer disconnected link";
+      if (l <= 0)
+      {
+         warn("Rx %d", (int) l);
+         return "Rx fail";
+      }
+      buflen += l;
+      if (buflen == 8)
+         n = ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]) * 4 + 8;
+   }
+   dump(buf, buflen, "Rx TCP");
+   if (buflen < 16)
+      return "Bad rx length";
+   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
+   return NULL;
+}
+
+
+const char *eth_get_counters(j_t j)
+{                               // Not done for ethernet
+   return NULL;
+}
+
+const char *eth_get_settings(j_t j, int req, const char *label, int N, const setting_t * settings)
+{
+   if (error)
+      return error;
+   eth_start(0xF0000000 + (req << 8), 0);
+   unsigned char data[N * 4];
+   for (int i = 0; i < N; i++)
+   {
+      data[i * 4] = settings[i].etag;
+      data[i * 4 + 1] = 0;
+      data[i * 4 + 2] = 0;
+      data[i * 4 + 3] = 0;
+   } eth_data(N * 4, data);
+   eth_tx_udp();
+   eth_rx_udp();
+   if (error)
+      return error;
+   j_t s = j_store_object(j, label);
+   unsigned char *p = buf + 16,
+       *e = buf + 8 + 4 * ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]);
+   while (p < e && *p)
+   {
+      if (p[1] > 1)
+         for (int i = 0; i < N; i++)
+            if (*p == settings[i].etag)
+            {                   // Simple number
+               if (p[2] <= 4)
+               {                // Number
+                  long long n = 0;
+                  for (int q = 0; q < p[2]; q++)
+                     n = (n << 8) + p[3 + q];
+                  if (settings[i].mul)
+                     n *= settings[i].mul;
+                  const char *v = settings[i].vals;
+                  if (v)
+                  {
+                     while (n--)
+                     {
+                        while (*v && *v != '/')
+                           v++;
+                        if (*v)
+                           v++;
+                     }
+                     const char *e = v;
+                     while (*e && *e != '/')
+                        e++;
+                     if (e > v)
+                     {
+                        if (isdigit(*v) || *v == '-')
+                           j_store_int(s, settings[i].name, atoi(v));
+                        else if (e - v == 4 && !strncmp(v, "true", e - v))
+                           j_store_true(s, settings[i].name);
+                        else if (e - v == 5 && !strncmp(v, "false", e - v))
+                           j_store_false(s, settings[i].name);
+                        else
+                           j_store_stringn(s, settings[i].name, v, e - v);
+                     }
+                  } else
+                     j_store_int(s, settings[i].name, n);
+               } else
+                  j_store_string(s, settings[i].name, strndupa((char *) p + 3, p[2]));  // String
+               break;           // found
+            }
+      p += 2 + p[1];
+   }
+   return error;
+}
 
 // Common commands
 const char *get_counters(j_t j)
 {
    if (usb)
       return usb_get_counters(j);
-   return NULL;                 // Not done for ethernet
+   return eth_get_counters(j);
 }
 
-const char *eth_get_settings(j_t j, int req, const char *label, int N, const setting_t * settings);
 const char *get_settings(j_t j)
 {
    if (usb)
@@ -766,124 +989,6 @@ j_t j_new(void)
    return j;
 }
 
-const char *eth_tx_udp(void)
-{
-   if (error)
-      return error;
-   if (udp < 0)
-      return error = "Printer not connected (UDP)";
-   if (buflen < 16)
-      return "Bad tx";
-   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
-   buflen = (buflen + 3) / 4 * 4;
-   unsigned int n = buflen / 4 - 2;
-   buf[4] = (n >> 24);
-   buf[5] = (n >> 16);
-   buf[6] = (n >> 8);
-   buf[7] = (n);
-   dump(buf, buflen, "Tx UDP");
-   int l = send(udp, buf, buflen, 0);
-   if (l < 0)
-      err(1, "Tx fail");
-   return NULL;
-}
-
-const char *eth_rx_udp(void)
-{
-   if (error)
-      return error;
-   if (udp < 0)
-      return error = "Printer not connected (UDP)";
-   struct timeval timeout = { 1, 0 };
-   fd_set readfs;
-   FD_ZERO(&readfs);
-   FD_SET(udp, &readfs);
-   if (select(udp + 1, &readfs, NULL, NULL, &timeout) <= 0)
-      return NULL;
-   if (bufmax < 1024 && !(buf = realloc(buf, bufmax = 1024)))
-      errx(1, "malloc");
-   buflen = recv(udp, buf, bufmax, 0);
-   if (!buflen)
-      return error = "No reply from printer";
-   if (buflen < 0)
-      err(1, "Rx UDP fail");
-   int n = ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]) * 4 + 8;
-   dump(buf, buflen, "Rx UDP");
-   if (buflen < 16 || buflen < n || n < 16)
-      return "Bad rx length";
-   buflen = n;
-   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
-   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
-   return NULL;
-}
-
-const char *eth_tx(void)
-{                               // Raw printer send
-   if (error)
-      return error;
-   if (tcp < 0)
-      return error = "Printer not connected";
-   if (buflen < 16)
-      return error = "Bad tx";
-   queue++;
-   txcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
-   buflen = (buflen + 3) / 4 * 4;
-   unsigned int n = buflen / 4 - 2;
-   buf[4] = (n >> 24);
-   buf[5] = (n >> 16);
-   buf[6] = (n >> 8);
-   buf[7] = (n);
-   dump(buf, buflen, "Tx TCP");
-   n = 0;
-   while (n < buflen)
-   {
-      int l = 0;
-      l = write(tcp, buf + n, buflen - n);
-      if (l <= 0)
-      {
-         warn("Tx %d", (int) l);
-         return "Tx fail";
-      }
-      n += l;
-   }
-   return NULL;
-}
-
-const char *eth_rx(void)
-{                               // raw printer receive
-   if (queue)
-      queue--;
-   if (error)
-      return error;
-   if (tcp < 0)
-      rxcmd = 0;
-   buflen = 0;
-   unsigned int n = 8;
-   while (buflen < n)
-   {
-      if (bufmax < n && !(buf = realloc(buf, bufmax = n)))
-         errx(1, "malloc");
-      int l = 0;
-      l = read(tcp, buf + buflen, n - buflen);
-      if (!l && !buflen)
-         return "Printer disconnected link";
-      if (l <= 0)
-      {
-         warn("Rx %d", (int) l);
-         return "Rx fail";
-      }
-      buflen += l;
-      if (buflen == 8)
-         n = ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]) * 4 + 8;
-   }
-   dump(buf, buflen, "Rx TCP");
-   if (buflen < 16)
-      return "Bad rx length";
-   rxcmd = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
-   rxerr = (buf[8] << 24) + (buf[9] << 16) + (buf[10] << 8) + buf[11];
-   return NULL;
-}
-
 const char *eth_start_cmd(unsigned int cmd);
 const char *eth_rx_check(ajl_t o)
 {
@@ -1023,7 +1128,7 @@ const char *eth_set_settings(j_t s)
          error = "Bad setting";
       else
       {
-         data[p++] = settings[i].tag;
+         data[p++] = settings[i].etag;
          data[p++] = 2;
          data[p++] = 1;
          data[p++] = n;
@@ -1036,73 +1141,6 @@ const char *eth_set_settings(j_t s)
    return error;
 }
 
-const char *eth_get_settings(j_t j, int req, const char *label, int N, const setting_t * settings)
-{
-   if (error)
-      return error;
-   eth_start(0xF0000000 + (req << 8), 0);
-   unsigned char data[N * 4];
-   for (int i = 0; i < N; i++)
-   {
-      data[i * 4] = settings[i].tag;
-      data[i * 4 + 1] = 0;
-      data[i * 4 + 2] = 0;
-      data[i * 4 + 3] = 0;
-   } eth_data(N * 4, data);
-   eth_tx_udp();
-   eth_rx_udp();
-   if (error)
-      return error;
-   j_t s = j_store_object(j, label);
-   unsigned char *p = buf + 16,
-       *e = buf + 8 + 4 * ((buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7]);
-   while (p < e && *p)
-   {
-      if (p[1] > 1)
-         for (int i = 0; i < N; i++)
-            if (*p == settings[i].tag)
-            {                   // Simple number
-               if (p[2] <= 4)
-               {                // Number
-                  long long n = 0;
-                  for (int q = 0; q < p[2]; q++)
-                     n = (n << 8) + p[3 + q];
-                  if (settings[i].mul)
-                     n *= settings[i].mul;
-                  const char *v = settings[i].vals;
-                  if (v)
-                  {
-                     while (n--)
-                     {
-                        while (*v && *v != '/')
-                           v++;
-                        if (*v)
-                           v++;
-                     }
-                     const char *e = v;
-                     while (*e && *e != '/')
-                        e++;
-                     if (e > v)
-                     {
-                        if (isdigit(*v) || *v == '-')
-                           j_store_int(s, settings[i].name, atoi(v));
-                        else if (e - v == 4 && !strncmp(v, "true", e - v))
-                           j_store_true(s, settings[i].name);
-                        else if (e - v == 5 && !strncmp(v, "false", e - v))
-                           j_store_false(s, settings[i].name);
-                        else
-                           j_store_stringn(s, settings[i].name, v, e - v);
-                     }
-                  } else
-                     j_store_int(s, settings[i].name, n);
-               } else
-                  j_store_string(s, settings[i].name, strndupa((char *) p + 3, p[2]));  // String
-               break;           // found
-            }
-      p += 2 + p[1];
-   }
-   return error;
-}
 
 const char *check_status(ajl_t o)
 {
