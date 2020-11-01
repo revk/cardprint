@@ -69,7 +69,7 @@ ssize_t xid_write_func(void *arg, void *buf, size_t len)
 {
 #ifndef LIB
    if (debug)
-      warnx("Tx: %.*s", (int)(len > 100 ? 100 : len), (char*)buf);
+      warnx("Tx: %.*s", (int) (len > 100 ? 100 : len), (char *) buf);
 #endif
    return SSL_write(arg, buf, len);
 }
@@ -79,7 +79,7 @@ ssize_t xid_read_func(void *arg, void *buf, size_t len)
    len = SSL_read(arg, buf, len);
 #ifndef LIB
    if (debug)
-      warnx("Rx: %.*s", (int)(len > 100 ? 100 : len), (char*)buf);
+      warnx("Rx: %.*s", (int) (len > 100 ? 100 : len), (char *) buf);
 #endif
    return len;
 }
@@ -466,9 +466,10 @@ int main(int argc, const char *argv[])
             j_store_int(s, "transfer-temp", newtemp);
             j_err(j_send(j, o));
             j_delete(&j);
+            if (!er)
+               while (!(er = next()) && j_test(j, "wait", 0));
          }
       }
-
       while (j_test(j, "wait", 0) && !(er = next()));
       if (!er)
       {

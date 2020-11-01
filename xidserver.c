@@ -414,6 +414,7 @@ const char *usb_connect(j_t j)
    if ((r = libusb_claim_interface(usb, 0)))
       return error = libusb_strerror(r);
    // Connected
+   status = "Connected";
    j_store_true(j, "usb");
    {                            // Basic info
       unsigned char rx[96];
@@ -920,6 +921,7 @@ const char *eth_connect_tcp(j_t j)
    if (tcp < 0)
       return error = "Could not connect to printer";
    // Connected
+   status = "Connected";
    eth_rx();
    if (!error && (buflen < 72 || rxcmd != 0xF3000200))
       error = "Unexpected init message";
