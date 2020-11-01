@@ -29,6 +29,12 @@
 #include <ajlparse.h>
 #include <png.h>
 
+// TODO things we don't do as yet
+// TODO JIS mag encoding, but could easily be added if necessary
+// TODO ISO mag Alternative track encoding options - again pretty easy if needed
+// TODO Security lock (some sort of challenge / response, needs more debug of windows)
+// TODO Block MIFARE write on server - need to check as may not be needed as can be done on client using "rfid" messages
+
 #define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
 #define	POS_PRINT	0
