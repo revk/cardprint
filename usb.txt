@@ -295,6 +295,10 @@ Security
  20 = Set key
  21 = Delete key
  22 = Unlock
- 23 = Lock
+ 23 = Lock (all 00s, no code needed)
+
+e.g
+ AB 24 CA A6 73 C4 E8 32 09 CF B3 DE 34 B7 3F 8B  Challenge (code UUUUUUUU)
+ 2B 4C 1C AE C9 91 E9 A4 42 5C AE C7 41 8E 4E 5A  Response
 
 
