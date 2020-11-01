@@ -203,8 +203,9 @@ static void dump(const void *buf, size_t len, const char *tag)
 {
    if (!debug)
       return;
+   static const char *head[] = { "𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿", "𝙰", "𝙱", "𝙲", "𝙳", "𝙴", "𝙵" };
    for (int i = 0; i < 16; i++)
-      fprintf(stderr, " %X ", i);
+      fprintf(stderr, " %s ", head[i]);
    fprintf(stderr, "%s\n", tag);
    int rows = 0,
        i;
@@ -296,19 +297,12 @@ const char *usb_txn_opts(usb_txn_t o)
       int len = 0;
       if (o.rxlen)
       {
-         int try = 10;
-         while (try--)
-         {
-            if ((r = libusb_bulk_transfer(usb, 0x81, o.buf, o.len, &len, to)) != LIBUSB_ERROR_PIPE)
-               break;
-            libusb_clear_halt(usb, 0x81);
-         }
-         if (!r)
-         {
-            if (!o.nodump)
-               dump(o.buf, len, "UDP Rx");
-            *o.rxlen = len;
-         }
+         r = libusb_bulk_transfer(usb, 0x81, o.buf, o.len, &len, to);
+         if (!o.nodump)
+            dump(o.buf, len, "UDP Rx");
+         if (r && r != LIBUSB_ERROR_PIPE)
+            return error = libusb_strerror(r);
+         *o.rxlen = len;
       } else
       {
          int try = 10;
@@ -344,12 +338,12 @@ const char *usb_txn_opts(usb_txn_t o)
       else if (status[4] + (status[5] << 8) + (status[6] << 16) + (status[7] << 24) != tag)
          error = "Bad USB status tag";
       if (error || !o.nodump)
-         dump(status, rxsize, "USB status");
+         dump(status, rxsize, status[12] ? "Check condition" : "Good");
       if (error)
          return error;
       //if (status[8] || status[9] || status[10] || status[11]) return error = "Bad USB status residue";
       if (status[12])
-         return "";
+         return "";             // Check condition, not an error
    }
    return error;
 }
@@ -747,6 +741,7 @@ const char *usb_mag_iso_encode(j_t j)
       encode(0xC4, 104, j_index(j, 2));
    }
  usb_txn("ISO encode", 0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len: p, to:60);
+   client_wait("Mag encode done");
    return error;
 }
 
@@ -761,6 +756,7 @@ const char *usb_mag_iso_read(j_t j)
    char rx[100];
    int rxlen = 0;
    void decode(void) {
+      warnx("Decode %d", (int) rxlen);
       int p = 0;
       while (p < rxlen)
       {
@@ -788,13 +784,16 @@ const char *usb_mag_iso_read(j_t j)
          j_stringn(j_index(j, track), temp, z);
       }
    }
+   client_wait("Track 1");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76, rxlen: &rxlen, to:60))
       decode();
+   client_wait("Track 2");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37, rxlen: &rxlen, to:60))
       decode();
+   client_wait("Track 3");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104, rxlen: &rxlen, to:60))
       decode();
-   // TODO Not coping if one of these txns fails...
+   client_wait("Mag read done");
    return error;
 }
 
@@ -1962,7 +1961,7 @@ const char *client_tx(j_t j)
 
 const char *client_wait(const char *s)
 {
-   if (rxerr || error || !strcmp(status ? : "", s ? : ""))
+   if (error || !strcmp(status ? : "", s ? : ""))
       return error;
    status = s;
    j_t j = j_create();
