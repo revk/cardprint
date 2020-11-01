@@ -242,6 +242,7 @@ static void dump(const void *buf, size_t len, const char *tag)
 // Low level USB functions
 
 typedef struct {
+   const char *tag;             // For debug
    unsigned char cmd;           // The command, can be followed by up to 8 bytes and 00, total is 6 or 10
    unsigned char p1;            // The command parameters
    unsigned char p2;
@@ -283,10 +284,10 @@ const char *usb_txn_opts(usb_txn_t o)
             break;
          libusb_clear_halt(usb, 2);
       }
+      if (!o.nodump || r)
+         dump(cmd, txsize, o.tag);
       if (r)
          return error = libusb_strerror(r);
-      if (!o.nodump)
-         dump(cmd, txsize, "USB CMD");
       if (txsize != sizeof(cmd))
          return error = "USB cmd tx size error";
    }
@@ -357,8 +358,8 @@ const char *usb_get_status(void)
 {                               // Does not wait
    unsigned char rx[20];
    int rxlen = 0;
- usb_txn(nodump:1);
- if (!usb_txn(0x03, p4: 20, len: 20, buf: rx, rxlen: &rxlen, nodump:1))
+ usb_txn("Test status", nodump:1);
+ if (!usb_txn("Get status", 0x03, p4: 20, len: 20, buf: rx, rxlen: &rxlen, nodump:1))
       rxerr = (rx[2] << 16) + (rx[12] << 8);
    return error;
 }
@@ -373,13 +374,15 @@ const char *usb_ready(int needcards)
       usb_get_status();
       if (!rxerr || (!needcards && rxerr == 0x0002D000))
          break;
+      if (!error && ((rxerr >> 16) == 3 || (rxerr >> 16) == 5))
+         error = msg(rxerr);
       if (rxerr && rxerr != last)
       {
          if (debug)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
          j_t j = j_create();
-         j_store_true(j, "wait");       // Add any as not added for No cards otherwise
+         j_store_true(j, "wait");       // Add anawayy as not added for No cards otherwise
          client_tx(j);
       }
       usleep(100000);
@@ -415,7 +418,7 @@ const char *usb_connect(j_t j)
    {                            // Basic info
       unsigned char rx[96];
       int rxlen = 0;
-    if (usb_txn(0x12, 0, 0, 0, 96, 0, buf: rx, len: 96, rxlen:&rxlen))
+    if (usb_txn("Get info", 0x12, 0, 0, 0, 96, 0, buf: rx, len: 96, rxlen:&rxlen))
          return error;
       char temp[33];
       strncpy(temp, (char *) rx + 16, 16);
@@ -453,7 +456,7 @@ const char *usb_connect(j_t j)
    {                            // Printer info
       unsigned char rx[64];
       int rxlen = 0;
-    if (usb_txn(0x1A, 0, 0x68, 0, 64, 0, buf: rx, len: 64, rxlen:&rxlen))
+    if (usb_txn("Get info", 0x1A, 0, 0x68, 0, 64, 0, buf: rx, len: 64, rxlen: &rxlen, to:5))
          return error;
       dpi = (rx[8] << 8) + rx[9];
       if (!dpi || (rx[10] << 8) + rx[11] != dpi)
@@ -482,7 +485,7 @@ const char *usb_get_settings(j_t j)
 {
    unsigned char rx[64];
    int rxlen = 0;
- if (usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+ if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "settings");
    int n;
@@ -513,7 +516,7 @@ const char *usb_set_settings(j_t j)
 {
    unsigned char rx[64];
    int rxlen = 0;
- if (usb_txn(0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+ if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
    unsigned char tx[32];
    memset(tx, 0xff, 32);
@@ -550,7 +553,7 @@ const char *usb_set_settings(j_t j)
          }
       }
    if (change)
-    usb_txn(0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
+    usb_txn("Send settings", 0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
    return error;
 }
 
@@ -558,7 +561,7 @@ const char *usb_get_info(j_t j)
 {
    unsigned char rx[44];
    int rxlen = 0;
- if (usb_txn(0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
+ if (usb_txn("Get info", 0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "info");
    if (rx[6] < sizeof(inktype) / sizeof(*inktype))
@@ -573,7 +576,7 @@ const char *usb_get_counters(j_t j)
 {
    unsigned char rx[52];
    int rxlen = 0;
- if (usb_txn(0x4D, 0, 0x78, 0, 0, 0, 0, 0, 52, buf: rx, len: 52, rxlen:&rxlen))
+ if (usb_txn("Get counter", 0x4D, 0, 0x78, 0, 0, 0, 0, 0, 52, buf: rx, len: 52, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "counters");
    int p = 4;
@@ -600,7 +603,7 @@ const char *usb_get_position(void)
       return error;
    unsigned char rx[8];
    int rxlen = 0;
- if (usb_txn(0x34, buf: rx, len: 8, rxlen: &rxlen, cmdlen:10))
+ if (usb_txn("Get position", 0x34, buf: rx, len: 8, rxlen: &rxlen, cmdlen:10))
       return error;
    if (rx[0])
       posn = POS_OUT;
@@ -613,7 +616,7 @@ const char *usb_card_load(unsigned char newposn, unsigned char immediate, unsign
 {
    if (usb_ready(1))
       return error;
- if (usb_txn(0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
+ if (usb_txn("Card load", 0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
       return error;
    posn = newposn;
    return error;
@@ -623,7 +626,7 @@ const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsign
 {
    if (usb_ready(0))
       return error;
- if (usb_txn(0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:30))
+ if (usb_txn("Card move", 0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:30))
       return error;
    posn = newposn;
    return error;
@@ -632,49 +635,49 @@ const char *usb_card_move(unsigned char newposn, unsigned char immediate, unsign
 const char *usb_transfer_flip(unsigned char immediate)
 {
    if (!usb_ready(0))
-    usb_txn(0x31, 0x0A, to:30);
+    usb_txn("Transfer flip", 0x31, 0x0A, to:30);
    return error;
 }
 
 const char *usb_transfer_eject(unsigned char immediate)
 {
    if (!usb_ready(0))
-    usb_txn(0x31, 0x09, to:30);
+    usb_txn("Transfer eject", 0x31, 0x09, to:30);
    return error;
 }
 
 const char *usb_transfer_return(unsigned char immediate)
 {
    if (!usb_ready(0))
-    usb_txn(0x31, 0x0D, to:30);
+    usb_txn("Transfer return", 0x31, 0x0D, to:30);
    return error;
 }
 
 const char *usb_ic_engage(void)
 {
    if (!usb_ready(0))
-    usb_txn(0x32, 0x00, to:10);
+    usb_txn("IC engage", 0x32, 0x00, to:10);
    return error;
 }
 
 const char *usb_ic_disengage(void)
 {
    if (!usb_ready(0))
-    usb_txn(0x32, 0x01, to:10);
+    usb_txn("IC disengage", 0x32, 0x01, to:10);
    return error;
 }
 
 const char *usb_rfid_engage(void)
 {
    if (!usb_ready(0))
-    usb_txn(0x32, 0x04, to:10);
+    usb_txn("RFID engage", 0x32, 0x04, to:10);
    return error;
 }
 
 const char *usb_rfid_disengage(void)
 {
    if (!usb_ready(0))
-    usb_txn(0x32, 0x05, to:10);
+    usb_txn("RFID disengage", 0x32, 0x05, to:10);
    return error;
 }
 
@@ -695,16 +698,16 @@ const char *usb_mag_iso_encode(j_t j)
       int len = j_len(j);
       if (len > 64)
          error = "Mag track too long";
-      else
+      else if (p + 2 < sizeof(temp))
       {
          tags[(tag >> 4) - 0x0A] = tag;
          temp[p++] = tag;
          temp[p++] = len;
          if ((tag & 0xF) == 6)
-            for (int q = 0; q < len; q++)
+            for (int q = 0; q < len && q < max && p < sizeof(temp); q++)
                temp[p++] = ((v[q] & 0x3F) ^ 0x20);
          else
-            for (int q = 0; q < len; q++)
+            for (int q = 0; q < len && q < max && p < sizeof(temp); q++)
                temp[p++] = (v[q] & 0xF);
          c++;
       }
@@ -717,7 +720,7 @@ const char *usb_mag_iso_encode(j_t j)
       encode(0xB4, 37, j_index(j, 1));
       encode(0xC4, 104, j_index(j, 2));
    }
- usb_txn(0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len: p, to:60);
+ usb_txn("ISO encode", 0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len: p, to:60);
    return error;
 }
 
@@ -759,11 +762,11 @@ const char *usb_mag_iso_read(j_t j)
          j_stringn(j_index(j, track), temp, z);
       }
    }
- if (!usb_txn(0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76, rxlen: &rxlen, to:60))
+ if (!usb_txn("ISO read", 0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76, rxlen: &rxlen, to:60))
       decode();
- if (!usb_txn(0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37, rxlen: &rxlen, to:60))
+ if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37, rxlen: &rxlen, to:60))
       decode();
- if (!usb_txn(0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104, rxlen: &rxlen, to:60))
+ if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104, rxlen: &rxlen, to:60))
       decode();
    // TODO Not coping if one of these txns fails...
    return error;
@@ -785,7 +788,7 @@ const char *usb_send_panel(unsigned char panel, unsigned int len, void *data)
 {
    const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
    if (!usb_ready(0))
-    usb_txn(0x2A, 0, map[panel], 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
+    usb_txn("Send panel", 0x2A, 0, map[panel], 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
    return error;
 }
 
@@ -801,7 +804,7 @@ const char *usb_print_panels(unsigned char panels, unsigned char immediate, unsi
    if (panels & 0x20)
       set |= 0x10;              // PO
    if (!usb_ready(0))
-    usb_txn(0x31, 0x08, set, 0, buffer, to:30);
+    usb_txn("Print panels", 0x31, 0x08, set, 0, buffer, to:30);
    return error;
 }
 

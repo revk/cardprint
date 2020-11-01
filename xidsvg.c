@@ -284,9 +284,10 @@ void xid_disconnect(ajl_t * i, ajl_t * o)
 }
 
 #ifndef LIB
+int waiting = 0;
 void mystatus(const char *status)
 {                               // Report status (if start * then error)
-   if (jsstatus)
+   if (jsstatus && waiting)
    {
       printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, status);
       fflush(stdout);
@@ -354,28 +355,28 @@ int main(int argc, const char *argv[])
    // Read SVG
    svg = xml_tree_read(stdin);
    if (!svg)
-      mystatus("*Cannot load svg");
+      status("*Cannot load svg");
    int v;
    if ((v = atoi(xml_get(svg, "@dpi") ? : "")))
    {
       if (dpi < 0)
          dpi = v;
       else if (dpi != v)
-         mystatus("*DPI mismatch");
+         status("*DPI mismatch");
    }
    if ((v = atoi(xml_get(svg, "@rows") ? : "")))
    {
       if (rows < 0)
          rows = v;
       else if (rows != v)
-         mystatus("*Rows mismatch");
+         status("*Rows mismatch");
    }
    if ((v = atoi(xml_get(svg, "@cols") ? : "")))
    {
       if (cols < 0)
          cols = v;
       else if (cols != v)
-         mystatus("*Cols mismatch");
+         status("*Cols mismatch");
    }
 
    if (preview)
@@ -398,8 +399,23 @@ int main(int argc, const char *argv[])
             errx(1, "%s", er);
       }
       j_t j = j_create();
-      char *er = j_recv(j, i);
+      char *er = NULL;
       int n;
+      char *next(void) {
+         if ((er = j_recv(j, i)))
+            return er;
+         const char *v;
+         waiting = 0;
+         if ((v = j_get(j, "status")))
+            status(v);
+         waiting = j_test(j, "wait", 0);
+         if ((v = j_get(j, "count")))
+            count = atoi(v);
+         if (j_find(j, "error"))
+            er = strdup(j_get(j, "error.description"));
+         return er;
+      }
+      next();
       if (!er && (n = atoi(j_get(j, "dpi") ? : "")))
       {
          if (dpi < 0)
@@ -421,9 +437,6 @@ int main(int argc, const char *argv[])
          else if (cols != n)
             er = ("Cols mismatch (printer)");
       }
-      const char *v;
-      if ((v = j_get(j, "status")))
-         status(v);
       {                         // Settings
          j_t s = j_find(j, "settings");
          if (j_isobject(s))
@@ -444,26 +457,24 @@ int main(int argc, const char *argv[])
          }
       }
 
-      while (j_test(j, "wait", 0) && !(er = j_recv(j, i)))
-         if ((v = j_get(j, "status")))
-            status(v);
+      while (j_test(j, "wait", 0) && !(er = next()));
       if (!er)
       {
-         j_t j = xid_compose(svg, dpi, rows, cols);
-         status("Printing");
-         j_err(j_send(j, o));
-         j_delete(&j);
+         j_t q = j_create();    // Prime for printing
+         j_store_true(q, "print");
+         j_err(j_send(q, o));
+         j_delete(&q);
+         j_t p = xid_compose(svg, dpi, rows, cols);
+         q = j_object(j_create());       // Status check
+         j_err(j_send(q, o));
+         j_delete(&q);
+         if (!er)
+            while (!(er = next()) && j_test(j, "wait", 0));
+         j_err(j_send(p, o));
+         j_delete(&p);
       }
       if (!er)
-         while (!(er = j_recv(j, i)))
-         {
-            if ((v = j_get(j, "status")))
-               status(v);
-            if ((v = j_get(j, "count")))
-               count = atoi(v);
-            if (j_find(j, "error"))
-               er = strdup(j_get(j, "error.description"));
-         }
+         while (!(er = next()) && j_test(j, "wait", 0));
       j_delete(&j);
       xid_disconnect(&i, &o);
       if (er && *er)
