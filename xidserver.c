@@ -2023,8 +2023,6 @@ char *job(const char *from)
    j = j_create();
    while (!(ers = j_recv(j, i)))
    {
-      if (!j_isobject(j))
-         break;                 // Sending null exists
       j_t print = j_find(j, "print");
       if (print && (j_isobject(print) || j_isarray(print)))
       {
@@ -2034,6 +2032,8 @@ char *job(const char *from)
       }
       if (debug)
          j_err(j_write_pretty(j, stderr));
+      if (!j_isobject(j))
+         break;                 // Sending null exists
       j_t cmd = NULL;
       if ((cmd = j_find(j, "settings")))
          set_settings(cmd);
