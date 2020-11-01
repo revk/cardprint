@@ -112,6 +112,13 @@ Notes
  15 10 2A 00 0A 00 send 10 bytes
 
  Settings!
+
+ Non NVR settings?
+ 15 10 2B 00 18 00
+>2B 16 [22 bytes]
+ Yet another mapping?
+
+
  15 10 28 00 20 00 sending 32 bytes :-
  Sending FF is not change...
  // Offset in 32 byte packet
