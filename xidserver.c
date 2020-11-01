@@ -434,7 +434,7 @@ const char *usb_connect(j_t j)
       for (int i = 7; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
       j_store_string(j, "manufacturer", temp);
-      strncpy(temp, (char *) rx + 24, 8);
+      strncpy(temp, (char *) rx + 32, 8);
       for (int i = 7; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
       j_store_string(j, "serial", temp);
@@ -464,6 +464,13 @@ const char *usb_connect(j_t j)
       cols = (rx[32] << 8) + rx[33];
       j_store_int(j, "card-rows", (rx[18] << 8) + rx[19]);
       j_store_int(j, "card-cols", (rx[16] << 8) + rx[17]);
+   }
+   {                            // MAC
+      unsigned char rx[6];
+      int rxlen = 0;
+    if (usb_txn("Get MAC", 0x3C, 2, 0x70, 0, 0, 0, 0, 0, 6, buf: rx, len: 6, rxlen:&rxlen))
+         return error;
+      j_store_string(j, "MAC", j_base16(6, rx));
    }
    return error;
 }
@@ -573,12 +580,12 @@ const char *usb_set_settings(j_t j)
 
 const char *usb_get_info(j_t j)
 {
+   j = j_store_object(j, "info");
    {
       unsigned char rx[44];
       int rxlen = 0;
     if (usb_txn("Get info", 0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
          return error;
-      j = j_store_object(j, "info");
       if (rx[6] < sizeof(inktype) / sizeof(*inktype))
          j_store_string(j, "ink", inktype[rx[6]]);
       if (rx[12] < 0xFF)
