@@ -232,7 +232,7 @@ static void dump(const void *buf, size_t len, const char *tag)
       fprintf(stderr, " %04X", b);
       if (rows > 10 && b + 16 < len)
       {
-         fprintf(stderr, " (%d)\n", len);
+         fprintf(stderr, " (%d)\n", (int) len);
          break;
       }
       fputc('\n', stderr);
@@ -559,16 +559,27 @@ const char *usb_set_settings(j_t j)
 
 const char *usb_get_info(j_t j)
 {
-   unsigned char rx[44];
-   int rxlen = 0;
- if (usb_txn("Get info", 0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
-      return error;
-   j = j_store_object(j, "info");
-   if (rx[6] < sizeof(inktype) / sizeof(*inktype))
-      j_store_string(j, "ink", inktype[rx[6]]);
-   if (rx[12] < 0xFF)
-      j_store_string(j, "ink-lot-number", strndupa((char *) rx + 12, 6));
-   j_store_int(j, "ink-total", (rx[8] << 8) + rx[9]);
+   {
+      unsigned char rx[44];
+      int rxlen = 0;
+    if (usb_txn("Get info", 0x1A, 0, 0x63, 0, 44, buf: rx, len: 44, rxlen:&rxlen))
+         return error;
+      j = j_store_object(j, "info");
+      if (rx[6] < sizeof(inktype) / sizeof(*inktype))
+         j_store_string(j, "ink", inktype[rx[6]]);
+      if (rx[12] < 0xFF)
+         j_store_string(j, "ink-lot-number", strndupa((char *) rx + 12, 6));
+      j_store_int(j, "ink-total", (rx[8] << 8) + rx[9]);
+   }
+   {
+      unsigned char rx[64];
+      int rxlen = 0;
+    if (usb_txn("Get info", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+         return error;
+      j_store_int(j, "ink-available", 2 * rx[0x34]);
+      j_store_int(j, "transfer-available", 10 * rx[0x33]);
+      j_store_boolean(j, "cards-available", !rx[0x35]);
+   }
    return error;
 }
 
