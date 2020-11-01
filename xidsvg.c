@@ -81,7 +81,7 @@ void xid_status_null(const char *s)
 
 static xid_status_t *status = xid_status_null;
 
-void xid_set_mystatus(xid_status_t * s)
+void xid_set_status(xid_status_t * s)
 {
    status = s;
 }
@@ -347,7 +347,7 @@ int main(int argc, const char *argv[])
       }
       poptFreeContext(optCon);
    }
-   xid_set_mystatus(mystatus);
+   xid_set_status(mystatus);
    if (output && !freopen(output, "w", stdout))
       mystatus("*Cannot open output");
    if (input && !freopen(input, "r", stdin))
