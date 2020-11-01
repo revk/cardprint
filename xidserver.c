@@ -202,7 +202,7 @@ ajl_t i = NULL,
 
 // General
 const char *client_tx(j_t j);
-const char *client_wait(const char *s);
+const char *client_status(const char *s);
 const char *moveto(int newposn);
 
 static void dump(const void *buf, size_t len, const char *tag)
@@ -382,7 +382,6 @@ const char *usb_ready(int needcards)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
          j_t j = j_create();
-         j_store_true(j, "wait");       // Add anawayy as not added for No cards otherwise
          client_tx(j);
       }
       usleep(100000);
@@ -711,7 +710,7 @@ const char *usb_rfid_disengage(void)
 const char *usb_mag_iso_encode(j_t j)
 {
    moveto(POS_MAG);
-   client_wait("Mag encode");
+   client_status("Mag encode");
    if (usb_ready(0))
       return error;
    unsigned char temp[76 + 37 + 104 + 6];
@@ -748,7 +747,7 @@ const char *usb_mag_iso_encode(j_t j)
       encode(0xC4, 104, j_index(j, 2));
    }
  usb_txn("ISO encode", 0x2D, 0, 0, tags[0], tags[1], tags[2], 0, 0, p, buf: temp, len: p, to:60);
-   client_wait("Mag encode done");
+   client_status("Mag encode done");
    return error;
 }
 
@@ -757,7 +756,7 @@ const char *usb_mag_iso_read(j_t j)
    j_array(j);
    j_extend(j, 3);
    moveto(POS_MAG);
-   client_wait("Mag read");
+   client_status("Mag read");
    if (usb_ready(0))
       return error;
    char rx[100];
@@ -791,16 +790,16 @@ const char *usb_mag_iso_read(j_t j)
          j_stringn(j_index(j, track), temp, z);
       }
    }
-   client_wait("Track 1");
+   client_status("Track 1");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0xA6, 0, 0, 76, 0, 0, buf: rx, len: 76, rxlen: &rxlen, to:60))
       decode();
-   client_wait("Track 2");
+   client_status("Track 2");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0xB4, 0, 0, 37, 0, buf: rx, len: 37, rxlen: &rxlen, to:60))
       decode();
-   client_wait("Track 3");
+   client_status("Track 3");
  if (!usb_txn("ISO read", 0x2C, 0, 0, 0, 0, 0xC4, 0, 0, 104, buf: rx, len: 104, rxlen: &rxlen, to:60))
       decode();
-   client_wait("Mag read done");
+   client_status("Mag read done");
    return error;
 }
 
@@ -1255,7 +1254,6 @@ const char *eth_rx_check(void)
          {
             last = rxerr;
             j_t j = j_create();
-            j_store_true(j, "wait");
             client_tx(j);
             update = now;
          }
@@ -1399,7 +1397,7 @@ const char *eth_mag_iso_encode(j_t j)
    if (c)
    {
       moveto(POS_MAG);
-      client_wait("Mag encode");
+      client_status("Mag encode");
       eth_start_cmd(0x09000000 + ((p + 2) << 16) + c);
       eth_data(p, temp);
       eth_tx_check();
@@ -1414,7 +1412,7 @@ const char *eth_mag_iso_encode(j_t j)
 const char *eth_mag_iso_read(j_t j)
 {
    moveto(POS_MAG);
-   client_wait("Mag read");
+   client_status("Mag read");
    // Load tacks separately as loading all at once causes error if any do not read
    void mread(j_t j, unsigned char tag) {
       char t = (tag >> 4) - 1;
@@ -1514,7 +1512,7 @@ const char *get_status(void)
 
 const char *card_load(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
-   client_wait("Loading card");
+   client_status("Loading card");
    if (usb)
       return usb_card_load(posn, immediate, flip, filminit);
    return eth_card_load(posn, immediate, flip, filminit);
@@ -1522,7 +1520,7 @@ const char *card_load(unsigned char posn, unsigned char immediate, unsigned char
 
 const char *card_move(unsigned char posn, unsigned char immediate, unsigned char flip, unsigned char filminit)
 {
-   client_wait("Moving card");
+   client_status("Moving card");
    if (usb)
       return usb_card_move(posn, immediate, flip, filminit);
    return eth_card_move(posn, immediate, flip, filminit);
@@ -1530,7 +1528,7 @@ const char *card_move(unsigned char posn, unsigned char immediate, unsigned char
 
 const char *transfer_flip(unsigned char immediate)
 {
-   client_wait("Transfer flip");
+   client_status("Transfer flip");
    if (usb)
       return usb_transfer_flip(immediate);
    return eth_transfer_flip(immediate);
@@ -1538,7 +1536,7 @@ const char *transfer_flip(unsigned char immediate)
 
 const char *transfer_eject(unsigned char immediate)
 {
-   client_wait("Transfer and done");
+   client_status("Transfer and done");
    if (usb)
       return usb_transfer_eject(immediate);
    return eth_transfer_eject(immediate);
@@ -1546,7 +1544,7 @@ const char *transfer_eject(unsigned char immediate)
 
 const char *transfer_return(unsigned char immediate)
 {
-   client_wait("Transfer");
+   client_status("Transfer");
    if (usb)
       return usb_transfer_return(immediate);
    return eth_transfer_return(immediate);
@@ -1873,7 +1871,6 @@ const char *moveto(int newposn)
       {                         // Need cards!
          j_t j = j_create();
          j_store_string(j, "status", "No cards");
-         j_store_true(j, "wait");
          client_tx(j);
          while (rxerr == 0x0002D000)
          {
@@ -1890,17 +1887,17 @@ const char *moveto(int newposn)
    } else if (newposn >= 0)
       card_move(newposn, 0, 0, 0);
    if (newposn == POS_MAG)
-      client_wait("Mag stripe");
+      client_status("Mag stripe");
    else if (newposn == POS_IC)
-      client_wait("IC station");
+      client_status("IC station");
    else if (newposn == POS_RFID)
-      client_wait("RFID station");
+      client_status("RFID station");
    else if (newposn == POS_PRINT)
-      client_wait("Printing");
+      client_status("Printing");
    else if (newposn == POS_REJECT)
-      client_wait("Reject");
+      client_status("Reject");
    else if (newposn == POS_EJECT)
-      client_wait("Done");
+      client_status("Done");
    posn = newposn;
    if (posn == POS_IC)
    {
@@ -1955,8 +1952,6 @@ const char *client_tx(j_t j)
       j_store_string(j, "status", msg(rxerr));
    else if (status)
       j_store_string(j, "status", status);
-   if (rxerr && rxerr != 0x0002D000)
-      j_store_true(j, "wait");
    if (count)
       j_store_int(j, "count", count);
    if (debug)
@@ -1967,13 +1962,12 @@ const char *client_tx(j_t j)
    return error;
 }
 
-const char *client_wait(const char *s)
+const char *client_status(const char *s)
 {
    if (error || !strcmp(status ? : "", s ? : ""))
       return error;
    status = s;
    j_t j = j_create();
-   j_store_true(j, "wait");
    client_tx(j);
    return error;
 }
@@ -2008,6 +2002,8 @@ char *job(const char *from)
    get_settings(j);
    get_info(j);
    get_status();
+   if (!rxerr || rxerr == 0x0002D000)
+      j_store_true(j, "ready"); // Ready for first command
    client_tx(j);
 
    get_position();
@@ -2109,7 +2105,7 @@ char *job(const char *from)
          if (j_istrue(print) || j_isnull(print))
          {
             moveto(POS_PRINT);  // ready to print
-            client_wait("Ready");
+            client_status("Ready");
          } else
          {
             unsigned char printed = 0;
@@ -2279,9 +2275,9 @@ char *job(const char *from)
                         transfer_flip(0);
                      else
                         card_move(POS_PRINT, 0, 1, 0);  // Flip no transfer
-                     client_wait("Second side");
+                     client_status("Second side");
                   } else
-                     client_wait("First side");
+                     client_status("First side");
                   printed = 0;
                   for (int p = 0; p < 8; p++)
                      if ((p < 3 && (found & 7)) || (found & (1 << p)))
@@ -2301,7 +2297,7 @@ char *job(const char *from)
                         {       // UV
                            if (printed & 0x0F)
                               transfer_return(0);
-                           client_wait("UV");
+                           client_status("UV");
                            print_panels(printed & 0x40, 0, 0);  // UV print
                         }
                      }
@@ -2344,20 +2340,18 @@ char *job(const char *from)
          if (posn >= 0)
             moveto(POS_REJECT);
          get_status();
-         client_tx(j_create());
          break;
       } else if ((cmd = j_find(j, "eject")))
       {
          moveto(POS_EJECT);
          get_status();
-         client_tx(j_create());
          break;
       }
       get_status();
-      client_tx(j_create());
+      j_null(j);
+      j_store_true(j, "ready"); // Ready for next command
+      client_tx(j);
    }
-
-   j_delete(&j);
    if (!ers && error)
       ers = strdup(error);
    if (ers)
@@ -2377,6 +2371,10 @@ char *job(const char *from)
          libusb_reset_device(usb);
       }
    }
+   j_null(j);
+   j_store_true(j, "complete"); // Done.
+   client_tx(j);
+   j_delete(&j);
    eth_disconnect();
    usb_disconnect();
    return ers;
