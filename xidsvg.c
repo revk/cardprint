@@ -402,17 +402,20 @@ int main(int argc, const char *argv[])
       char *er = NULL;
       int n;
       char *next(void) {
-         if ((er = j_recv(j, i)))
-            return er;
-         const char *v;
-         waiting = 0;
-         if ((v = j_get(j, "status")))
-            mystatus(v);
-         waiting = j_test(j, "wait", 0);
-         if ((v = j_get(j, "count")))
-            count = atoi(v);
-         if (j_find(j, "error"))
-            er = strdup(j_get(j, "error.description"));
+         if (!(er = j_recv(j, i)))
+         {
+            const char *v;
+            waiting = 0;
+            if ((v = j_get(j, "status")))
+               mystatus(v);
+            waiting = j_test(j, "wait", 0);
+            if ((v = j_get(j, "count")))
+               count = atoi(v);
+            if (j_find(j, "error"))
+               er = strdup(j_get(j, "error.description"));
+         }
+         if (er)
+            warnx("Error: %s", er);
          return er;
       }
       next();
