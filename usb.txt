@@ -288,3 +288,13 @@ Mode sense, for printer info
  Security 	1
  Laminator	0
 
+Security
+ 3C 02 C0 00 00 00 00 00 10 00 Gets a 16 byte value
+ 3B 02 C1 00 00 00 00 00 18 00 Sends data :-
+ 2X 06 04 30 01 38 00 00 + 16 bytes somehow based on challenge and 8 byte key
+ 20 = Set key
+ 21 = Delete key
+ 22 = Unlock
+ 23 = Lock
+
+

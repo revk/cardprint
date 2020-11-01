@@ -465,7 +465,7 @@ int main(int argc, const char *argv[])
          j_err(j_send(q, o));
          j_delete(&q);
          j_t p = xid_compose(svg, dpi, rows, cols);
-         q = j_object(j_create());       // Status check
+         q = j_object(j_create());      // Status check
          j_err(j_send(q, o));
          j_delete(&q);
          if (!er)

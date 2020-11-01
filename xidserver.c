@@ -55,10 +55,9 @@ const setting_t settings[] = {  // Ethernet and USB settings
    { 0x39, 0x1A, 0x1d, "display-mode", "counter/laminator" },
    { 0x3A, 0x1B, 0x1e, "display-counter", "total/head/free/clean/error" },
    { 0x37, 0x18, 0x1b, "display-contrast", "///0/1/2" },
-   { 0xFF, 0xFF, 0x1f, "security-lock", "false/true" }, // not in main USB settings block
-   { 0xFF, 0xFF, 0x28, "retry-count", "0/1/2/3" },      // Not in main USB settings block
-   { 0xFF, 0xFF, 0x29, "jis-type", "loco/hico" },       // Not in main USB settings block
-   { 0xFF, 0xFF, 0x2a, "iso-type", "loco/hico" },       // not in main USB settings block
+   { 0x4B, 0x27, 0x28, "retry-count", "0/1/2/3" },
+   { 0x47, 0x23, 0x29, "jis-type", "loco/hico" },
+   { 0x46, 0x22, 0x2a, "iso-type", "loco/hico" },
    { 0x18, 0x11, 0x33, "film-type", "1000/750" },
    { 0x2D, 0x0D, 0x46, "k-level", "//-1/0/1/2/3" },
    { 0x2E, 0x0E, 0x47, "k-mode", "standard/fine" },
@@ -73,6 +72,7 @@ const setting_t settings[] = {  // Ethernet and USB settings
    { 0x14, 0x0B, 0x55, "mg-peel-mode", "standard/stripe" },
    { 0x1B, 0x0C, 0x56, "standby-mode", "front/back" },
    { 0x0C, 0x12, 0x5c, "hr-control", "false/true" },
+   { 0x3B, 0xFF, 0x1f, "locked", "false/true" },
    { 0x3C, 0x1C, 0x5d, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
    { 0x3D, 0x1D, 0x5e, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
    { 0x3E, 0x1E, 0x5f, "backside-cool", "false/true" },
@@ -483,14 +483,16 @@ void usb_disconnect(void)
 
 const char *usb_get_settings(j_t j)
 {
-   unsigned char rx[64];
+   unsigned char rx[64 + 14];
    int rxlen = 0;
  if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+      return error;
+ if (usb_txn("Get settings", 0x1A, 0, 0x6A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "settings");
    int n;
    for (int i = 0; i < SETTINGS; i++)
-      if ((n = settings[i].rpos) != 0xFF)
+      if ((n = settings[i].rpos) < sizeof(rx))
       {
          n = rx[n];
          const char *v = settings[i].vals;
@@ -505,8 +507,14 @@ const char *usb_get_settings(j_t j)
             const char *e = strchr(v, '/');
             if (!e)
                e = v + strlen(v);
-            if (e > v)
-               j_store_stringn(j, settings[i].name, v, (int) (e - v));
+            if (isdigit(*v) || *v == '-')
+               j_store_int(j, settings[i].name, atoi(v));
+            else if (e - v == 4 && !strncmp(v, "true", e - v))
+               j_store_true(j, settings[i].name);
+            else if (e - v == 5 && !strncmp(v, "false", e - v))
+               j_store_false(j, settings[i].name);
+            else
+               j_store_stringn(j, settings[i].name, v, e - v);
          }
       }
    return error;
@@ -514,17 +522,21 @@ const char *usb_get_settings(j_t j)
 
 const char *usb_set_settings(j_t j)
 {
-   unsigned char rx[64];
+   unsigned char rx[64 + 14];
    int rxlen = 0;
  if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
-   unsigned char tx[32];
-   memset(tx, 0xff, 32);
-   tx[0] = 0x28;
-   tx[1] = 0x1E;                // Length I expect
+ if (usb_txn("Get settings", 0x1A, 0, 0x6A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
+      return error;
+   unsigned char tx[32 + 10];
+   memset(tx, 0xff, 32 + 10);
+   tx[0] = 0x28;                // Type
+   tx[1] = 0x1E;                // Length
+   tx[32] = 0x2A;
+   tx[33] = 0x08;               // Length
    int change = 0;
    for (int i = 0; i < SETTINGS; i++)
-      if (settings[i].wpos < 32)
+      if (settings[i].wpos < sizeof(tx))
       {
          const char *v = j_get(j, settings[i].name);
          if (!v)
@@ -546,14 +558,17 @@ const char *usb_set_settings(j_t j)
          }
          if (!*s)
             error = "Bad setting";
-         else if (rx[settings[i].rpos] != n)
+         else if (settings[i].rpos >= sizeof(rx) || rx[settings[i].rpos] != n)
          {
             tx[settings[i].wpos] = n;
             change++;
          }
       }
    if (change)
+   {
     usb_txn("Send settings", 0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
+    usb_txn("Send settings", 0x15, 0x10, 0x2A, 0, 10, len: 10, buf:tx + 32);
+   }
    return error;
 }
 
