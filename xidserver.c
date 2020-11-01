@@ -201,7 +201,7 @@ ajl_t i = NULL,
     o = NULL;                   // Output to client
 
 // General
-const char *client_tx(j_t j);
+const char *client_tx(j_t * jp);
 const char *client_status(const char *s);
 const char *moveto(int newposn);
 
@@ -381,13 +381,12 @@ const char *usb_ready(int needcards)
          if (debug)
             warnx("Status %X: %s", rxerr, msg(rxerr));
          last = rxerr;
-         j_t j = j_create();
-         client_tx(j);
+         client_tx(NULL);
       }
       usleep(100000);
    }
    if (last)
-      client_tx(j_create());
+      client_tx(NULL);
    return error;
 }
 
@@ -1253,8 +1252,7 @@ const char *eth_rx_check(void)
          if (rxerr != last || now > update)
          {
             last = rxerr;
-            j_t j = j_create();
-            client_tx(j);
+            client_tx(NULL);
             update = now;
          }
          usleep(100000);
@@ -1263,7 +1261,7 @@ const char *eth_rx_check(void)
          eth_rx();
       }
       if (!rxerr && o)
-         client_tx(j_create());
+         client_tx(NULL);
       if (!error && rxerr && rxerr != 0x0002D000)
          error = msg(rxerr);
       return error;
@@ -1404,7 +1402,7 @@ const char *eth_mag_iso_encode(j_t j)
       status = "Encoded";
       j_t j = j_create();
       j_store_boolean(j, "mag", rxerr ? 0 : 1);
-      client_tx(j);
+      client_tx(&j);
    }
    return error;
 }
@@ -1752,7 +1750,7 @@ const char *card_connect(const char *reader)
       return "Cannot get card status";
    j_t j = j_create();
    j_store_string(j, "atr", j_base16(atrlen, atr));
-   client_tx(j);
+   client_tx(&j);
    return error;
 }
 
@@ -1871,7 +1869,7 @@ const char *moveto(int newposn)
       {                         // Need cards!
          j_t j = j_create();
          j_store_string(j, "status", "No cards");
-         client_tx(j);
+         client_tx(&j);
          while (rxerr == 0x0002D000)
          {
             usleep(100000);
@@ -1935,8 +1933,15 @@ ssize_t ss_read_func(void *arg, void *buf, size_t len)
    return SSL_read(arg, buf, len);
 }
 
-const char *client_tx(j_t j)
+const char *client_tx(j_t * jp)
 {                               // Send data to client (deletes)
+   j_t j;
+   if (!jp)
+   {
+      j = j_create();
+      jp = &j;
+   } else
+      j = *jp;
    if (!ss)
       return "No client";
    if (posn != POS_UNKNOWN)
@@ -1958,7 +1963,7 @@ const char *client_tx(j_t j)
       j_err(j_write_pretty(j, stderr));
    if (o)
       j_err(j_send(j, o));
-   j_delete(&j);
+   j_delete(jp);
    return error;
 }
 
@@ -1967,8 +1972,7 @@ const char *client_status(const char *s)
    if (error || !strcmp(status ? : "", s ? : ""))
       return error;
    status = s;
-   j_t j = j_create();
-   client_tx(j);
+   client_tx(NULL);
    return error;
 }
 
@@ -2004,7 +2008,7 @@ char *job(const char *from)
    get_status();
    if (!rxerr || rxerr == 0x0002D000)
       j_store_true(j, "ready"); // Ready for first command
-   client_tx(j);
+   client_tx(&j);
 
    get_position();
    if (posn >= 0)
@@ -2018,10 +2022,10 @@ char *job(const char *from)
 
    // Handle messages both ways
    char *ers;
-   j = j_create();
-   while (!(ers = j_recv(j, i)))
+   j_t rx = j_create();
+   while (!(ers = j_recv(rx, i)))
    {
-      j_t print = j_find(j, "print");
+      j_t print = j_find(rx, "print");
       if (print && (j_isobject(print) || j_isarray(print)))
       {
          j_detach(print);
@@ -2029,17 +2033,17 @@ char *job(const char *from)
             warnx("Print command not dumped");
       }
       if (debug)
-         j_err(j_write_pretty(j, stderr));
-      if (!j_isobject(j))
+         j_err(j_write_pretty(rx, stderr));
+      if (!j_isobject(rx))
       {
          if (debug)
             warnx("Job complete");
          break;                 // Sending null exists
       }
       j_t cmd = NULL;
-      if ((cmd = j_find(j, "settings")))
+      if ((cmd = j_find(rx, "settings")))
          set_settings(cmd);
-      if ((cmd = j_find(j, "jis")))
+      if ((cmd = j_find(rx, "jis")))
       {
          j_t j = j_create();
          if (j_isstring(cmd))
@@ -2049,9 +2053,9 @@ char *job(const char *from)
                j_store_true(j, "mag");
          } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_jis_read(j_store_array(j, "mag"));
-         client_tx(j);
+         client_tx(&j);
       }
-      if ((cmd = j_find(j, "mag")))
+      if ((cmd = j_find(rx, "mag")))
       {
          j_t j = j_create();
          if (j_isarray(cmd) || j_isstring(cmd))
@@ -2061,9 +2065,9 @@ char *job(const char *from)
                j_store_true(j, "mag");
          } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_iso_read(j_store_array(j, "mag"));
-         client_tx(j);
+         client_tx(&j);
       }
-      if ((cmd = j_find(j, "ic")))
+      if ((cmd = j_find(rx, "ic")))
       {
          moveto(POS_IC);
          if (j_isstring(cmd))
@@ -2076,11 +2080,11 @@ char *job(const char *from)
             warnx("Txn done len %ld", rxlen);
             j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
-            client_tx(j);
+            client_tx(&j);
             warnx("ic done");
          }
       }
-      if ((cmd = j_find(j, "rfid")))
+      if ((cmd = j_find(rx, "rfid")))
       {
          moveto(POS_RFID);
          if (j_isstring(cmd))
@@ -2092,10 +2096,10 @@ char *job(const char *from)
             card_txn(txlen, tx, &rxlen, rx);
             j_t j = j_create();
             j_store_string(j, "rfid", j_base16(rxlen, rx));
-            client_tx(j);
+            client_tx(&j);
          }
       }
-      if ((cmd = j_find(j, "mifare")))
+      if ((cmd = j_find(rx, "mifare")))
       {
          moveto(POS_RFID);
          // TODO
@@ -2105,7 +2109,7 @@ char *job(const char *from)
          if (j_istrue(print) || j_isnull(print))
          {
             moveto(POS_PRINT);  // ready to print
-            client_status("Ready");
+            client_status("Ready to print");
          } else
          {
             unsigned char printed = 0;
@@ -2323,7 +2327,7 @@ char *job(const char *from)
                eth_rx_check();
             if (printed)
             {
-               client_tx(j_create());
+               client_tx(NULL);
                transfer_eject(0);
                status = "Printed";
             } else
@@ -2332,26 +2336,26 @@ char *job(const char *from)
                status = "Unprinted";
             }
             get_status();
-            client_tx(j_create());
             break;
          }
-      } else if ((cmd = j_find(j, "reject")))
+      } else if ((cmd = j_find(rx, "reject")))
       {
          if (posn >= 0)
             moveto(POS_REJECT);
          get_status();
          break;
-      } else if ((cmd = j_find(j, "eject")))
+      } else if ((cmd = j_find(rx, "eject")))
       {
          moveto(POS_EJECT);
          get_status();
          break;
       }
       get_status();
-      j_null(j);
+      j_t j = j_create();
       j_store_true(j, "ready"); // Ready for next command
-      client_tx(j);
+      client_tx(&j);
    }
+   j_delete(&rx);
    if (!ers && error)
       ers = strdup(error);
    if (ers)
@@ -2371,10 +2375,11 @@ char *job(const char *from)
          libusb_reset_device(usb);
       }
    }
-   j_null(j);
-   j_store_true(j, "complete"); // Done.
-   client_tx(j);
-   j_delete(&j);
+   {
+      j_t j = j_create();
+      j_store_true(j, "complete");      // Done.
+      client_tx(&j);
+   }
    eth_disconnect();
    usb_disconnect();
    return ers;
