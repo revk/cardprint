@@ -160,7 +160,7 @@ static const char *msg(unsigned int e)
    if (e == 0x0003AD00)
       return "Mag write fail";
    if (e == 0x00062800)
-      return "Reset";
+      return "Medium changed";
    return "Printer returned error (see code)";
 }
 
