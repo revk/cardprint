@@ -33,7 +33,6 @@
 // TODO JIS mag encoding, but could easily be added if necessary
 // TODO ISO mag Alternative track encoding options - again pretty easy if needed
 // TODO Security lock (some sort of challenge / response, needs more debug of windows)
-// TODO Block MIFARE write on server - need to check as may not be needed as can be done on client using "rfid" messages
 
 #define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
@@ -2032,6 +2031,7 @@ char *job(const char *from)
    j_t rx = j_create();
    while (!(ers = j_recv(rx, i)))
    {
+      get_status();
       j_t print = j_find(rx, "print");
       if (print && (j_isobject(print) || j_isarray(print)))
       {
@@ -2060,7 +2060,9 @@ char *job(const char *from)
                j_store_true(j, "mag");
          } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_jis_read(j_store_array(j, "mag"));
+         j_store_true(j, "ready");
          client_tx(&j);
+         continue;
       }
       if ((cmd = j_find(rx, "mag")))
       {
@@ -2072,7 +2074,9 @@ char *job(const char *from)
                j_store_true(j, "mag");
          } else if (j_isnull(cmd) || j_istrue(cmd))
             mag_iso_read(j_store_array(j, "mag"));
+         j_store_true(j, "ready");
          client_tx(&j);
+         continue;
       }
       if ((cmd = j_find(rx, "ic")))
       {
@@ -2086,7 +2090,9 @@ char *job(const char *from)
             card_txn(txlen, tx, &rxlen, rx);
             j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
+            j_store_true(j, "ready");
             client_tx(&j);
+            continue;
          }
       }
       if ((cmd = j_find(rx, "rfid")))
@@ -2101,13 +2107,10 @@ char *job(const char *from)
             card_txn(txlen, tx, &rxlen, rx);
             j_t j = j_create();
             j_store_string(j, "rfid", j_base16(rxlen, rx));
+            j_store_true(j, "ready");
             client_tx(&j);
+            continue;
          }
-      }
-      if ((cmd = j_find(rx, "mifare")))
-      {
-         moveto(POS_RFID);
-         // TODO
       }
       if (print)
       {
@@ -2311,7 +2314,6 @@ char *job(const char *from)
                         }
                      }
                   }
-                  get_status();
                }
                for (int i = 0; i < 8; i++)
                   if (data[i])
@@ -2340,19 +2342,16 @@ char *job(const char *from)
                moveto(POS_EJECT);       // Done anyway
                status = "Unprinted";
             }
-            get_status();
             break;
          }
       } else if ((cmd = j_find(rx, "reject")))
       {
          if (posn >= 0)
             moveto(POS_REJECT);
-         get_status();
          break;
       } else if ((cmd = j_find(rx, "eject")))
       {
          moveto(POS_EJECT);
-         get_status();
          break;
       }
       get_status();
