@@ -2077,11 +2077,9 @@ char *job(const char *from)
             unsigned char rx[256];
             DWORD rxlen = sizeof(rx);
             card_txn(txlen, tx, &rxlen, rx);
-            warnx("Txn done len %ld", rxlen);
             j_t j = j_create();
             j_store_string(j, "ic", j_base16(rxlen, rx));
             client_tx(&j);
-            warnx("ic done");
          }
       }
       if ((cmd = j_find(rx, "rfid")))
