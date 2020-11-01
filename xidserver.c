@@ -2033,7 +2033,11 @@ char *job(const char *from)
       if (debug)
          j_err(j_write_pretty(j, stderr));
       if (!j_isobject(j))
+      {
+         if (debug)
+            warnx("Job complete");
          break;                 // Sending null exists
+      }
       j_t cmd = NULL;
       if ((cmd = j_find(j, "settings")))
          set_settings(cmd);
@@ -2356,6 +2360,8 @@ char *job(const char *from)
       ers = strdup(error);
    if (ers)
    {
+      if (debug)
+         warnx("Error: %s", ers);
       error = NULL;
       if (posn >= 0)
       {
