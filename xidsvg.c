@@ -487,7 +487,7 @@ int main(int argc, const char *argv[])
          j_delete(&p);
       }
       if (!er)
-         while (!(er = next()) && j_test(j, "wait", 0));
+         while (!(er = next()));
       j_delete(&j);
       xid_disconnect(&i, &o);
       if (er && *er)
