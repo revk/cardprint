@@ -67,12 +67,21 @@ xml_t svg = NULL;
 
 ssize_t xid_write_func(void *arg, void *buf, size_t len)
 {
+#ifndef LIB
+   if (debug)
+      warnx("Tx: %.*s", (int)(len > 100 ? 100 : len), (char*)buf);
+#endif
    return SSL_write(arg, buf, len);
 }
 
 ssize_t xid_read_func(void *arg, void *buf, size_t len)
 {
-   return SSL_read(arg, buf, len);
+   len = SSL_read(arg, buf, len);
+#ifndef LIB
+   if (debug)
+      warnx("Rx: %.*s", (int)(len > 100 ? 100 : len), (char*)buf);
+#endif
+   return len;
 }
 
 void xid_status_null(const char *s)
