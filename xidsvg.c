@@ -296,7 +296,7 @@ void xid_disconnect(ajl_t * i, ajl_t * o)
 int waiting = 0;
 void mystatus(const char *status)
 {                               // Report status (if start * then error)
-   if (jsstatus && waiting)
+   if (jsstatus && !waiting)
    {
       printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, status);
       fflush(stdout);
@@ -423,7 +423,7 @@ int main(int argc, const char *argv[])
             if (j_find(j, "error"))
                er = strdup(j_get(j, "error.description"));
          }
-         if (er)
+         if (er && *er)
             warnx("Error: %s", er);
          return er;
       }
@@ -470,7 +470,6 @@ int main(int argc, const char *argv[])
                while (!(er = next()) && j_test(j, "wait", 0));
          }
       }
-      while (j_test(j, "wait", 0) && !(er = next()));
       if (!er)
       {
          j_t q = j_create();    // Prime for printing
