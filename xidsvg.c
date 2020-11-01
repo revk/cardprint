@@ -81,7 +81,7 @@ void xid_status_null(const char *s)
 
 static xid_status_t *status = xid_status_null;
 
-void xid_set_status(xid_status_t * s)
+void xid_set_mystatus(xid_status_t * s)
 {
    status = s;
 }
@@ -347,7 +347,7 @@ int main(int argc, const char *argv[])
       }
       poptFreeContext(optCon);
    }
-   xid_set_status(mystatus);
+   xid_set_mystatus(mystatus);
    if (output && !freopen(output, "w", stdout))
       mystatus("*Cannot open output");
    if (input && !freopen(input, "r", stdin))
@@ -355,28 +355,28 @@ int main(int argc, const char *argv[])
    // Read SVG
    svg = xml_tree_read(stdin);
    if (!svg)
-      status("*Cannot load svg");
+      mystatus("*Cannot load svg");
    int v;
    if ((v = atoi(xml_get(svg, "@dpi") ? : "")))
    {
       if (dpi < 0)
          dpi = v;
       else if (dpi != v)
-         status("*DPI mismatch");
+         mystatus("*DPI mismatch");
    }
    if ((v = atoi(xml_get(svg, "@rows") ? : "")))
    {
       if (rows < 0)
          rows = v;
       else if (rows != v)
-         status("*Rows mismatch");
+         mystatus("*Rows mismatch");
    }
    if ((v = atoi(xml_get(svg, "@cols") ? : "")))
    {
       if (cols < 0)
          cols = v;
       else if (cols != v)
-         status("*Cols mismatch");
+         mystatus("*Cols mismatch");
    }
 
    if (preview)
@@ -407,7 +407,7 @@ int main(int argc, const char *argv[])
          const char *v;
          waiting = 0;
          if ((v = j_get(j, "status")))
-            status(v);
+            mystatus(v);
          waiting = j_test(j, "wait", 0);
          if ((v = j_get(j, "count")))
             count = atoi(v);
@@ -478,9 +478,9 @@ int main(int argc, const char *argv[])
       j_delete(&j);
       xid_disconnect(&i, &o);
       if (er && *er)
-         status(er);
+         mystatus(er);
       else if (!count)
-         status("Nothing printed");
+         mystatus("Nothing printed");
       if (er)
          free(er);
    }
