@@ -30,6 +30,7 @@
 #include <png.h>
 
 // TODO things we don't do as yet
+// TODO Laminator
 // TODO JIS mag encoding, but could easily be added if necessary
 // TODO ISO mag Alternative track encoding options - again pretty easy if needed
 // TODO Security lock (some sort of challenge / response, needs more debug of windows)
