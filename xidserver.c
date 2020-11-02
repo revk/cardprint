@@ -1158,6 +1158,7 @@ static char *job(const char *from)
    j_store_string(j, "status", status = "Connected");
    // Connect to printer, get answer back, report to client
    card_check();
+   get_status();
    j_store_boolean(j, "ic", readeric);
    j_store_boolean(j, "rfid", readerrfid);
    usb_connect(j);
