@@ -172,7 +172,7 @@ static int dodump = 0;          // Force all dump
 static libusb_device_handle *usb = NULL;        // Connected printer (USB)
 static const char *readeric = NULL,
     *readerrfid = NULL;
-static const char *printusb = "2166:701d";      // Printer USB device
+static const char *printusb = NULL;
 static const char *error = NULL;
 static const char *status = NULL;       // Status
 static unsigned int rxerr = 0;  // Last rx error
@@ -1152,13 +1152,13 @@ static char *job(const char *from)
    j_store_boolean(j, "ic", readeric);
    j_store_boolean(j, "rfid", readerrfid);
    usb_connect(j);
+   if (!error && !usb)
+      error = "No printer available";
    if (!error && (!rows || !cols || !dpi))
       error = "Bad printer info";
    j_store_int(j, "rows", rows);
    j_store_int(j, "cols", cols);
    j_store_int(j, "dpi", dpi);
-   if (!error && !usb)
-      error = "No printer available";
    if (error)
    {
       if (usb)
