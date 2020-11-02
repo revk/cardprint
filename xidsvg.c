@@ -60,7 +60,6 @@ int uvsingle = 0;
 int copies = 1;
 const char *input = NULL;
 const char *output = NULL;
-char *jsstatus = NULL;
 int count = 0;
 xml_t svg = NULL;
 #endif
@@ -297,6 +296,7 @@ void xid_disconnect(ajl_t * i, ajl_t * o)
 }
 
 #ifndef LIB
+char *jsstatus = NULL;
 void mystatus(const char *status)
 {                               // Report status (if start * then error)
    if (jsstatus)
@@ -310,7 +310,7 @@ void mystatus(const char *status)
 
 int main(int argc, const char *argv[])
 {
-   char *xidserver = getenv("CARDPRINTER");;
+   char *xidserver = getenv("CARDPRINTER");
    const char *certfile = NULL;
    const char *keyfile = NULL;
    int speed = -99;
