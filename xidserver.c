@@ -157,6 +157,8 @@ static const char *msg(unsigned int e)
       return "Ink Run Out";
    if (e == 0x00052000)
       return "Bad cmd";
+   if (e == 0x00052400)
+      return "Wait"; // ??
    if (e == 0x00052600)
       return "Card position error";
    if (e == 0x0003AD00)
