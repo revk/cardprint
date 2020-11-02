@@ -475,11 +475,15 @@ static void usb_disconnect(void)
 
 static const char *get_settings(j_t j, unsigned char nvr)
 {
+   unsigned char soft[24];
+   memset(soft, 0xFF, 24);
+   soft[0] = 0x2B;              // Tag
+   soft[1] = 0x16;              // Len
    unsigned char rx[64 + 14];
    int rxlen = 0;
- if (usb_txn("Get settings", 0x1A, 0, nvr ? 0x68 : 0x28, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+ if (usb_txn(nvr ? "Get NVR settings" : "Get job settings", 0x1A, 0, nvr ? 0x68 : 0x28, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
- if (usb_txn("Get settings", 0x1A, 0, nvr ? 0x6A : 0x2A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
+ if (usb_txn(nvr ? "Get NVR settings" : "Get job settings", 0x1A, 0, nvr ? 0x6A : 0x2A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "settings");
    int n;
@@ -487,6 +491,9 @@ static const char *get_settings(j_t j, unsigned char nvr)
       if ((n = settings[i].rpos) < sizeof(rx))
       {
          n = rx[n];
+         int s = settings[i].spos;
+         if (s < sizeof(soft))
+            soft[s] = n;
          const char *v = settings[i].vals;
          while (n-- && v)
          {
@@ -509,16 +516,25 @@ static const char *get_settings(j_t j, unsigned char nvr)
                j_store_stringn(j, settings[i].name, v, e - v);
          }
       }
+   if (nvr)
+   {                            // Update settings to NVR
+    if (usb_txn("Set job settings", 0x15, 0x10, 0x2B, 0, 0x18, buf: soft, len:24))
+         return error;
+   }
    return error;
 }
 
 static const char *set_settings(j_t j)
 {
+   unsigned char soft[24];
+   memset(soft, 0xFF, 24);
+   soft[0] = 0x2B;              // Tag
+   soft[1] = 0x16;              // Len
    unsigned char rx[64 + 14];
    int rxlen = 0;
- if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+ if (usb_txn("Get NVR settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
- if (usb_txn("Get settings", 0x1A, 0, 0x6A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
+ if (usb_txn("Get NVR settings", 0x1A, 0, 0x6A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
       return error;
    unsigned char tx[32 + 10];
    memset(tx, 0xff, 32 + 10);
@@ -550,16 +566,25 @@ static const char *set_settings(j_t j)
          }
          if (!*s)
             error = "Bad setting";
-         else if (settings[i].rpos >= sizeof(rx) || rx[settings[i].rpos] != n)
-         {
-            tx[settings[i].wpos] = n;
-            change++;
+         else
+         {                      // Set
+            if (settings[i].rpos >= sizeof(rx) || rx[settings[i].rpos] != n)
+            {
+               tx[settings[i].wpos] = n;
+               change++;
+            }
+            if (settings[i].spos < sizeof(soft))
+               soft[settings[i].spos] = n;
          }
       }
    if (change)
    {
-    usb_txn("Send settings", 0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
-    usb_txn("Send settings", 0x15, 0x10, 0x2A, 0, 10, len: 10, buf:tx + 32);
+      if (j_test(j, "save", 0))
+      {                         // Update NVR
+       usb_txn("Set NVR settings", 0x15, 0x10, 0x28, 0, 32, len: 32, buf:tx);
+       usb_txn("Set NVR settings", 0x15, 0x10, 0x2A, 0, 10, len: 10, buf:tx + 32);
+      }
+    usb_txn("Set job settings", 0x15, 0x10, 0x2B, 0, 0x18, buf: soft, len:24);
    }
    return error;
 }
@@ -845,7 +870,7 @@ static const char *print_panels(unsigned char panels, unsigned char immediate, u
 
 static const char *pos_name[] = { "print", "ic", "rfid", "mag", "reject", "eject" };
 
-                                        // Config
+   // Config
 static const char *keyfile = NULL;
 static const char *certfile = NULL;
 
