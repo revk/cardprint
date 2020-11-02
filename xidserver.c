@@ -384,11 +384,19 @@ static const char *usb_connect(j_t j)
    enum libusb_error r;
    if ((r = libusb_init(NULL)))
       return error = libusb_strerror(r);
-   int vendor,
-    product;
-   if (sscanf(printusb, "%X:%X", &vendor, &product) != 2)
-      return "USB setting is vendor:product";
-   usb = libusb_open_device_with_vid_pid(NULL, vendor, product);
+   if (printusb && *printusb)
+   {
+      int vendor,
+       product;
+      if (sscanf(printusb, "%X:%X", &vendor, &product) != 2)
+         return "USB setting is vendor:product";
+      usb = libusb_open_device_with_vid_pid(NULL, vendor, product);
+   } else
+   {                            // default
+      usb = libusb_open_device_with_vid_pid(NULL, 0x2166, 0x701d);      // XID8600
+      if (!usb)
+         usb = libusb_open_device_with_vid_pid(NULL, 0x04f1, 0x403c);   // XID9300
+   }
    if (!usb)
       return error;             // Could not connect, let's try ethernet shall we
    if ((r = libusb_set_auto_detach_kernel_driver(usb, 1)))
@@ -655,7 +663,7 @@ static const char *transfer_flip(unsigned char immediate)
    client_status("Transfer flip");
    if (!usb_ready(0))
     usb_txn("Transfer flip", 0x31, 0x0A, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -664,7 +672,7 @@ static const char *transfer_eject(unsigned char immediate)
    client_status("Transfer and done");
    if (!usb_ready(0))
     usb_txn("Transfer eject", 0x31, 0x09, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -673,7 +681,7 @@ static const char *transfer_return(unsigned char immediate)
    client_status("Transfer");
    if (!usb_ready(0))
     usb_txn("Transfer return", 0x31, 0x0D, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -1522,7 +1530,7 @@ int main(int argc, const char *argv[])
       const struct poptOption optionsTable[] = {
          { "host", 'h', POPT_ARG_STRING, &bindhost, 0, "Host to bind", "Host/IP" },
          { "port", 'p', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &port, 0, "Port to bind", "port" },
-         { "usb", 'U', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &printusb, 0, "Printer port (USB)", "XXXX:XXXX" },
+         { "usb", 'U', POPT_ARG_STRING, &printusb, 0, "Printer port (USB)", "XXXX:XXXX" },
          { "key-file", 'k', POPT_ARG_STRING, &keyfile, 0, "SSL key file", "filename" },
          { "cert-file", 'k', POPT_ARG_STRING, &certfile, 0, "SSL cert file", "filename" },
          { "listen", 'q', POPT_ARG_INT, &lqueue, 0, "Listen queue", "N" },
