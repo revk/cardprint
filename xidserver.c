@@ -1461,7 +1461,7 @@ static char *job(const char *from)
                   for (int p = 0; p < 8; p++)
                      if ((p < 3 && (found & 7)) || (found & (1 << p)))
                      {          // Send panel
-                        send_panel(p, rows * cols, data[p], size);
+                        send_panel(p, rows * cols, data[p], side);
                         printed |= (1 << p);
                      }
                   if (printed)
