@@ -1160,7 +1160,6 @@ static char *job(const char *from)
    j_store_string(j, "status", status = "Connected");
    // Connect to printer, get answer back, report to client
    card_check();
-   get_status();
    j_store_boolean(j, "ic", readeric);
    j_store_boolean(j, "rfid", readerrfid);
    usb_connect(j);
@@ -1177,6 +1176,7 @@ static char *job(const char *from)
          libusb_reset_device(usb);
       return strdup(error);
    }
+   get_status();
    get_counters(j);
    get_settings(j, 1);
    get_info(j);
