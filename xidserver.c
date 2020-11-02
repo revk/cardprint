@@ -92,6 +92,8 @@ static const char *inktype[] = { "YMCK", "", "", "", "YMCKK", "YMCKU" };
 
 static const char *msg(unsigned int e)
 {
+   if (e == 0x0002DD00)
+      return "Check screen - menu in use";
    if (e == 0x0002DA00)
       return "Warming up, not ready";
    if (e == 0x0002DB00)
