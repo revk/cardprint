@@ -46,42 +46,43 @@
 
 typedef struct setting_s setting_t;
 struct setting_s {
-   unsigned char rpos;
-   unsigned char wpos;
-   unsigned char etag;
+   unsigned char rpos;          // Pos in reading blocks
+   unsigned char wpos;          // Pos in writing blocks
+   unsigned char spos;          // Pos in soft settings write
    const char *name;
    const char *vals;
    int mul;
 };
 
 static const setting_t settings[] = {   // Ethernet and USB settings
-   { 0x1A, 0x13, 0x14, "card-thickness", "standard//thin" },
-   { 0x31, 0x15, 0x16, "buzzer", "true/false" },
-   { 0x32, 0x16, 0x18, "hr-power-save", "//////45/60/false" },
-   { 0x39, 0x1A, 0x1d, "display-mode", "counter/laminator" },
-   { 0x3A, 0x1B, 0x1e, "display-counter", "total/head/free/clean/error" },
-   { 0x37, 0x18, 0x1b, "display-contrast", "///0/1/2" },
-   { 0x4B, 0x27, 0x28, "retry-count", "0/1/2/3" },
-   { 0x47, 0x23, 0x29, "jis-type", "loco/hico" },
-   { 0x46, 0x22, 0x2a, "iso-type", "loco/hico" },
-   { 0x18, 0x11, 0x33, "film-type", "1000/750" },
-   { 0x2D, 0x0D, 0x46, "k-level", "//-1/0/1/2/3" },
-   { 0x2E, 0x0E, 0x47, "k-mode", "standard/fine" },
-   { 0x36, 0x17, 0x48, "ymc-level", "//-1/0/1/2/3" },
-   { 0x2F, 0x0F, 0x4a, "uv-level", "//-1/0/1/2/3" },
-   { 0x30, 0x10, 0x4b, "po-level", "//-1/0/1/2/3}" },
-   { 0x25, 0x04, 0x4c, "transfer-temp", "-2/-1/0/1/2" },
-   { 0x26, 0x05, 0x4d, "transfer-speed-front", "/1/0/-1/-2/-3" },
-   { 0x27, 0x06, 0x4e, "transfer-speed-back", "/1/0/-1/-2/-3" },
-   { 0x28, 0x07, 0x4f, "bend-temp", "-5/-4/-3/-2///////false" },
-   { 0x29, 0x08, 0x50, "bend-speed", "-2/-1/0/1/2" },
-   { 0x14, 0x0B, 0x55, "mg-peel-mode", "standard/stripe" },
-   { 0x1B, 0x0C, 0x56, "standby-mode", "front/back" },
-   { 0x0C, 0x12, 0x5c, "hr-control", "false/true" },
-   { 0x3B, 0xFF, 0x1f, "locked", "false/true" },
-   { 0x3C, 0x1C, 0x5d, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
-   { 0x3D, 0x1D, 0x5e, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
-   { 0x3E, 0x1E, 0x5f, "backside-cool", "false/true" },
+   { 0x36, 0x17, 0x0A, "ymc-level", "//-1/0/1/2/3" },
+   { 0x2D, 0x0D, 0x0B, "k-level", "//-1/0/1/2/3" },
+   { 0x2E, 0x0E, 0x12, "k-mode", "standard/fine" },
+   { 0x2F, 0x0F, 0x0C, "uv-level", "//-1/0/1/2/3" },
+   { 0x30, 0x10, 0x0D, "po-level", "//-1/0/1/2/3}" },
+   { 0x25, 0x04, 0x02, "transfer-temp", "-2/-1/0/1/2" },
+   { 0x26, 0x05, 0x03, "transfer-speed-front", "/1/0/-1/-2/-3" },
+   { 0x3C, 0x1C, 0x13, "transfer-speed-uv-front", "/1/0/-1/-2/-3" },
+   { 0x27, 0x06, 0x04, "transfer-speed-back", "/1/0/-1/-2/-3" },
+   { 0x3D, 0x1D, 0x14, "transfer-speed-uv-back", "/1/0/-1/-2/-3" },
+   { 0x14, 0x0B, 0x08, "mg-peel-mode", "standard/stripe" },
+   { 0x1B, 0x0C, 0x09, "standby-mode", "front/back" },
+   { 0x3E, 0x1E, 0x15, "backside-cool", "false/true" },
+   { 0x28, 0x07, 0x05, "bend-temp", "-5/-4/-3/-2///////false" },
+   { 0x29, 0x08, 0x06, "bend-speed", "-2/-1/0/1/2" },
+   { 0x46, 0x22, 0x0F, "iso-type", "loco/hico" },
+   { 0x47, 0x23, 0x10, "jis-type", "loco/hico" },
+   { 0x4B, 0x27, 0x11, "retry-count", "0/1/2/3" },
+   { 0xFF, 0xFF, 0x0E, "laminate", "false/true" },
+   { 0x1A, 0x13, 0xFF, "card-thickness", "standard//thin" },
+   { 0x31, 0x15, 0xFF, "buzzer", "true/false" },
+   { 0x32, 0x16, 0xFF, "hr-power-save", "//////45/60/false" },
+   { 0x39, 0x1A, 0xFF, "display-mode", "counter/laminator" },
+   { 0x3A, 0x1B, 0xFF, "display-counter", "total/head/free/clean/error" },
+   { 0x37, 0x18, 0xFF, "display-contrast", "///0/1/2" },
+   { 0x18, 0x11, 0xFF, "film-type", "1000/750" },
+   { 0x0C, 0x12, 0xFF, "hr-control", "false/true" },
+   { 0x3B, 0xFF, 0xFF, "locked", "false/true" },
 };
 
 #define SETTINGS (sizeof(settings)/sizeof(*settings))
@@ -472,13 +473,13 @@ static void usb_disconnect(void)
    usb = NULL;
 }
 
-static const char *get_settings(j_t j)
+static const char *get_settings(j_t j, unsigned char nvr)
 {
    unsigned char rx[64 + 14];
    int rxlen = 0;
- if (usb_txn("Get settings", 0x1A, 0, 0x68, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
+ if (usb_txn("Get settings", 0x1A, 0, nvr ? 0x68 : 0x28, 0, 64, buf: rx, len: 64, rxlen:&rxlen))
       return error;
- if (usb_txn("Get settings", 0x1A, 0, 0x6A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
+ if (usb_txn("Get settings", 0x1A, 0, nvr ? 0x6A : 0x2A, 0, 14, buf: rx + 64, len: 14, rxlen:&rxlen))
       return error;
    j = j_store_object(j, "settings");
    int n;
@@ -656,7 +657,7 @@ static const char *transfer_flip(unsigned char immediate)
    client_status("Transfer flip");
    if (!usb_ready(0))
     usb_txn("Transfer flip", 0x31, 0x0A, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -665,7 +666,7 @@ static const char *transfer_eject(unsigned char immediate)
    client_status("Transfer and done");
    if (!usb_ready(0))
     usb_txn("Transfer eject", 0x31, 0x09, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -674,7 +675,7 @@ static const char *transfer_return(unsigned char immediate)
    client_status("Transfer");
    if (!usb_ready(0))
     usb_txn("Transfer return", 0x31, 0x0D, to:60);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -814,11 +815,11 @@ static const char *mag_jis_read(j_t j)
    return error;
 }
 
-static const char *send_panel(unsigned char panel, unsigned int len, void *data)
+static const char *send_panel(unsigned char panel, unsigned int len, void *data, unsigned char buffer)
 {
    const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
    if (!usb_ready(0))
-    usb_txn("Send panel", 0x2A, 0, map[panel], 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
+    usb_txn("Send panel", 0x2A, 0, map[panel] + (buffer ? 8 : 0), 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
    return error;
 }
 
@@ -1132,7 +1133,7 @@ static char *job(const char *from)
       return strdup(error);
    }
    get_counters(j);
-   get_settings(j);
+   get_settings(j, 1);
    get_info(j);
    get_status();
    if (!rxerr || rxerr == 0x0002D000)
@@ -1418,7 +1419,7 @@ static char *job(const char *from)
                   for (int p = 0; p < 8; p++)
                      if ((p < 3 && (found & 7)) || (found & (1 << p)))
                      {          // Send panel
-                        send_panel(p, rows * cols, data[p]);
+                        send_panel(p, rows * cols, data[p], 0);
                         printed |= (1 << p);
                      }
                   if (printed)
