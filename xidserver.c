@@ -34,6 +34,7 @@
 // TODO JIS mag encoding, but could easily be added if necessary
 // TODO ISO mag Alternative track encoding options - again pretty easy if needed
 // TODO Security lock (some sort of challenge / response, needs more debug of windows)
+// TODO multiple copies
 
 #define	POS_UNKNOWN	-2
 #define	POS_OUT		-1
@@ -1460,23 +1461,23 @@ static char *job(const char *from)
                   for (int p = 0; p < 8; p++)
                      if ((p < 3 && (found & 7)) || (found & (1 << p)))
                      {          // Send panel
-                        send_panel(p, rows * cols, data[p], 0);
+                        send_panel(p, rows * cols, data[p], size);
                         printed |= (1 << p);
                      }
                   if (printed)
                   {
                      if (j_test(panel, "uvsingle", 0))
-                        print_panels(printed, 0, 0);    // All in one
+                        print_panels(printed, 0, side);    // All in one
                      else
                      {          // UV printed separately
                         if (printed & 0x0F)
-                           print_panels(printed & 0x0F, 0, 0);  // Non UV
+                           print_panels(printed & 0x0F, 0, side);  // Non UV
                         if (printed & 0x40)
                         {       // UV
                            if (printed & 0x0F)
                               transfer_return(0);
                            client_status("UV");
-                           print_panels(printed & 0x40, 0, 0);  // UV print
+                           print_panels(printed & 0x40, 0, side);  // UV print
                         }
                      }
                   }
