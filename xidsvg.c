@@ -301,7 +301,7 @@ void mystatus(const char *status)
 {                               // Report status (if start * then error)
    if (jsstatus)
    {
-      printf("<script>document.getElementById('%s').innerHTML='%s';</script>\n", jsstatus, status);
+      printf("<script>document.getElementById('%s').innerHTML='%s';</script>", jsstatus, status);
       fflush(stdout);
    }
    if (*status == '*')
