@@ -158,14 +158,20 @@ static const char *msg(unsigned int e)
    if (e == 0x00052000)
       return "Bad cmd";
    if (e == 0x00052400)
-      return "Wait"; // ??
+      return "Wait";            // ??
    if (e == 0x00052600)
       return "Card position error";
    if (e == 0x0003AD00)
       return "Mag write fail";
    if (e == 0x00062800)
       return "Medium changed";
-   return "Printer returned error (see code)";
+   if ((e >> 16) == 5)
+      return "Unknown warning";
+   if ((e >> 16) == 2)
+      return "Unknown status";
+   if ((e >> 16) == 3)
+      return "Unknown error (see code)";
+   return "Unexpected status";
 }
 
 
