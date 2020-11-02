@@ -1182,6 +1182,7 @@ static char *job(const char *from)
       j_store_true(j, "ready"); // Ready for first command
    client_tx(&j);
 
+   // Expect no card in printer
    get_position();
    if (posn >= 0)
    {
@@ -1467,17 +1468,17 @@ static char *job(const char *from)
                   if (printed)
                   {
                      if (j_test(panel, "uvsingle", 0))
-                        print_panels(printed, 0, side);    // All in one
+                        print_panels(printed, 0, side); // All in one
                      else
                      {          // UV printed separately
                         if (printed & 0x0F)
-                           print_panels(printed & 0x0F, 0, side);  // Non UV
+                           print_panels(printed & 0x0F, 0, side);       // Non UV
                         if (printed & 0x40)
                         {       // UV
                            if (printed & 0x0F)
                               transfer_return(0);
                            client_status("UV");
-                           print_panels(printed & 0x40, 0, side);  // UV print
+                           print_panels(printed & 0x40, 0, side);       // UV print
                         }
                      }
                   }
