@@ -281,13 +281,16 @@ j_t xid_connect(const char *xidserver, const char *keyfile, const char *certfile
 
 void xid_disconnect(ajl_t * i, ajl_t * o)
 {
-   SSL *ss = ajl_arg(*i);
-   if (ss)
+   if (i && *i)
    {
-      int fd = SSL_get_fd(ss);
-      SSL_shutdown(ss);
-      SSL_free(ss);
-      close(fd);
+      SSL *ss = ajl_arg(*i);
+      if (ss)
+      {
+         int fd = SSL_get_fd(ss);
+         SSL_shutdown(ss);
+         SSL_free(ss);
+         close(fd);
+      }
    }
    ajl_delete(i);
    ajl_delete(o);
