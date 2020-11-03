@@ -716,8 +716,7 @@ static const char *transfer_flip(unsigned char immediate)
 {
    client_status("Transfer flip");
    if (!usb_ready(0))
-    usb_txn("Transfer flip", 0x31, 0x0A, to:60);
-   // May have to wait for temp change
+    usb_txn("Transfer flip", 0x31, 0x0A, to:90); // May have to wait for temp change
    return error;
 }
 
@@ -725,8 +724,7 @@ static const char *transfer_eject(unsigned char immediate)
 {
    client_status("Transfer and done");
    if (!usb_ready(0))
-    usb_txn("Transfer eject", 0x31, 0x09, to:60);
-   // May have to wait for temp change
+    usb_txn("Transfer eject", 0x31, 0x09, to:90); // May have to wait for temp change
    return error;
 }
 
@@ -734,8 +732,7 @@ static const char *transfer_return(unsigned char immediate)
 {
    client_status("Transfer");
    if (!usb_ready(0))
-    usb_txn("Transfer return", 0x31, 0x0D, to:60);
-   // May have to wait for temp change
+    usb_txn("Transfer return", 0x31, 0x0D, to:90); // May have to wait for temp change
    return error;
 }
 
