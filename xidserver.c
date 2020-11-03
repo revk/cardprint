@@ -1351,7 +1351,6 @@ static char *job(const char *from)
                   int l = j_base64d(d + 22, &png);
                   FILE *f = fmemopen(png, l, "rb");
                   const char *process(void) {
-                     warnx("Rotate %X", rotate);        // TODO
                      if (png_sig_cmp(png, 0, l))
                         return error = "Not PNG";
                      png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
