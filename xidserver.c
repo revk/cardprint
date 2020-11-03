@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <popt.h>
+#include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
 #include <stdlib.h>
@@ -44,6 +45,17 @@
 #define	POS_MAG		3
 #define	POS_REJECT	4
 #define	POS_EJECT	5
+
+enum {
+   FILM_K,
+   FILM_Y,
+   FILM_M,
+   FILM_C,
+   FILM_P,
+   FILM_U,
+   FILMS,
+   FILM_YMC = FILM_Y
+};
 
 typedef struct setting_s setting_t;
 struct setting_s {
@@ -862,22 +874,28 @@ static const char *mag_jis_read(j_t j)
 
 static const char *send_panel(unsigned char panel, unsigned int len, void *data, unsigned char buffer)
 {
-   const unsigned char map[] = { 3, 2, 1, 0, 0, 5, 4 };
+   if (panel >= FILMS)
+      errx(1, "Layer %d", panel);
+   void *d = data;
+   if (!d)
+      d = calloc(1, len);       // Send 0 data
    if (!usb_ready(0))
-    usb_txn("Send panel", 0x2A, 0, map[panel] + (buffer ? 8 : 0), 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:data);
+    usb_txn("Send panel", 0x2A, 0, panel + (buffer ? 8 : 0), 0, 0, len >> 24, len >> 16, len >> 8, len, len: len, buf:d);
+   if (!data)
+      free(d);
    return error;
 }
 
 static const char *print_panels(unsigned char panels, unsigned char immediate, unsigned char buffer)
 {
    unsigned char set = (immediate ? 0x01 : 0);
-   if (panels & 0x07)
+   if (panels & ((1 << FILM_Y) | (1 << FILM_M) | (1 << FILM_C)))
       set |= 0x02;              // YMC
-   if (panels & 0x08)
+   if (panels & (1 << FILM_K))
       set |= 0x04;              // K
-   if (panels & 0x40)
+   if (panels & (1 << FILM_U))
       set |= 0x08;              // UV
-   if (panels & 0x20)
+   if (panels & (1 << FILM_P))
       set |= 0x10;              // PO
    if (!usb_ready(0))
     usb_txn("Print panels", 0x31, 0x08, set, 0, buffer, to:30);
@@ -1312,13 +1330,12 @@ static char *job(const char *from)
                if (!panel)
                   return error;
                unsigned char found = 0;
-               unsigned char *data[8] = { };
-               const char *add(const char *tag1, const char *tag2, int layer) {
+               unsigned char *data[FILMS] = { };
+               const char *add(const char *d, int layer) {
+                  if (layer >= FILMS)
+                     errx(1, "Layer %d", layer);
                   if (error)
                      return error;
-                  const char *d = j_get(panel, tag1);
-                  if (!d)
-                     d = j_get(panel, tag2);
                   if (!d)
                      return error;
                   if (strncasecmp(d, "data:image/png;base64,", 22))
@@ -1352,14 +1369,14 @@ static char *job(const char *from)
                      int dx = (cols - (int) width) / 2,
                          dy = (rows - (int) height) / 2;
                      if (debug)
-                        warnx("PNG %s%d:%ux%u (%+d/%+d) card %d/%d", tag1, side, width, height, dx, dy, cols, rows);
+                        warnx("PNG %ux%u (%+d/%+d) card %d/%d", width, height, dx, dy, cols, rows);
                      png_set_expand(png_ptr);   // Expand palette, etc
                      static const png_color_16 bg = { 255, 65535, 65535, 65535, 65535 };
                      png_set_background(png_ptr, &bg, PNG_BACKGROUND_GAMMA_FILE, 0, 1.0);
                      png_set_strip_16(png_ptr); // Reduce to 8 bit
                      png_set_packing(png_ptr);  // Unpack
-                     if (layer)
-                        png_set_rgb_to_gray(png_ptr, 1, 54.0 / 256, 183.0 / 256);
+                     if (layer != FILM_YMC)
+                        png_set_rgb_to_gray(png_ptr, 1, 54.0 / 256, 183.0 / 256);       // Mono
                      else
                         png_set_gray_to_rgb(png_ptr);   // RGB
                      png_set_strip_alpha(png_ptr);
@@ -1379,10 +1396,10 @@ static char *job(const char *from)
                         }
                      }
                      png_read_update_info(png_ptr, info_ptr);
-                     if (!layer)
-                     {          // CMY
+                     if (layer == FILM_YMC)
+                     {          // YMC
                         png_bytep image = malloc(4 * width);
-                        for (int layer = 0; layer < 3; layer++)
+                        for (int layer = FILM_YMC; layer < FILM_YMC + 3; layer++)
                         {
                            data[layer] = malloc(rows * cols);
                            memset(data[layer], 0, rows * cols);
@@ -1405,7 +1422,7 @@ static char *job(const char *from)
                                  }
                               }
                         }
-                        for (int layer = 0; layer < 3; layer++)
+                        for (int layer = FILM_YMC; layer < FILM_YMC + 3; layer++)
                         {
                            int z;
                            for (z = 0; z < rows * cols && !data[layer][z]; z++);
@@ -1433,7 +1450,7 @@ static char *job(const char *from)
                                  if (x >= 0 && x < cols)
                                  {
                                     int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
-                                    if (layer == 3)
+                                    if (layer == FILM_K || layer == FILM_P)
                                        data[layer][o] = ((image[c] & 0x80) ? 0 : 0xFF); // Black
                                     else
                                        data[layer][o] = image[c] ^ 0xFF;
@@ -1458,10 +1475,23 @@ static char *job(const char *from)
                   free(png);
                   return error;
                }
-               add("C", "CMY", 0);
-               add("K", "K", 3);
-               add("P", "PO", 5);
-               add("U", "UV", 6);
+               if (j_isstring(panel))
+                  add(j_val(panel), FILM_YMC);  // Simple colour only
+               else if (j_isobject(panel))
+               {
+                  const char *d;
+                  if ((d = j_get(panel, "YMC")) || (d = j_get(panel, "CMY")) || (d = j_get(panel, "C")) || (d = j_get(panel, "Colour")))
+                     add(d, FILM_YMC);
+                  if ((d = j_get(panel, "K")))
+                     add(d, FILM_K);
+                  if ((d = j_get(panel, "UV")) || (d = j_get(panel, "U")))
+                     add(d, FILM_U);
+                  if ((d = j_get(panel, "PO")) || (d = j_get(panel, "P")))
+                     add(d, FILM_P);
+               } else
+                  error = "Bad print data";
+               if (found & ((1 << FILM_Y) | (1 << FILM_M) | (1 << FILM_C)))
+                  found |= ((1 << FILM_Y) | (1 << FILM_M) | (1 << FILM_C));     // All or nothing for colour layers
                if (found)
                {
                   moveto(POS_PRINT);    // ready to print
@@ -1475,8 +1505,8 @@ static char *job(const char *from)
                   } else
                      client_status("First side");
                   printed = 0;
-                  for (int p = 0; p < 8; p++)
-                     if ((p < 3 && (found & 7)) || (found & (1 << p)))
+                  for (int p = 0; p < FILMS; p++)
+                     if (found & (1 << p))
                      {          // Send panel
                         send_panel(p, rows * cols, data[p], side);
                         printed |= (1 << p);
@@ -1487,19 +1517,19 @@ static char *job(const char *from)
                         print_panels(printed, 0, side); // All in one
                      else
                      {          // UV printed separately
-                        if (printed & 0x0F)
+                        if (printed & ~(1 << FILM_U))
                            print_panels(printed & 0x0F, 0, side);       // Non UV
-                        if (printed & 0x40)
+                        if (printed & (1 << FILM_U))
                         {       // UV
-                           if (printed & 0x0F)
-                              transfer_return(0);
+                           if (printed & ~(1 << FILM_U))
+                              transfer_return(0);       // Transfer for non UV
                            client_status("UV");
-                           print_panels(printed & 0x40, 0, side);       // UV print
+                           print_panels(printed & (1 << FILM_U), 0, side);      // UV print
                         }
                      }
                   }
                }
-               for (int i = 0; i < 8; i++)
+               for (int i = 0; i < FILMS; i++)
                   if (data[i])
                      free(data[i]);
                side++;
@@ -1606,7 +1636,6 @@ int main(int argc, const char *argv[])
    }
    if (background)
       daemon(0, debug);
-
    // Bind for connection
    int l = -1;
  const struct addrinfo hints = { ai_flags: AI_PASSIVE, ai_socktype: SOCK_STREAM, ai_family:AF_UNSPEC };
