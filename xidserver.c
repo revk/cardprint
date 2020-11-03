@@ -51,8 +51,8 @@ enum {
    FILM_Y,
    FILM_M,
    FILM_C,
-   FILM_P,
    FILM_U,
+   FILM_P,
    FILMS,
    FILM_YMC = FILM_Y
 };
@@ -1524,7 +1524,7 @@ static char *job(const char *from)
                      }
                   if (printed)
                   {
-                     if (j_test(panel, "uvsingle", 0))
+                     if (j_test(rx, "uv-single", 0))
                         print_panels(printed, 0, side); // All in one
                      else
                      {          // UV printed separately
