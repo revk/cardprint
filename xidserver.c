@@ -51,8 +51,8 @@ enum {
    FILM_Y,
    FILM_M,
    FILM_C,
-   FILM_P,
    FILM_U,
+   FILM_P,
    FILMS,
    FILM_YMC = FILM_Y
 };
@@ -442,7 +442,7 @@ static const char *usb_connect(j_t j)
       for (int i = 15; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
       j_store_string(j, "type", temp);
-      rotate = 1; // Default short edge flip
+      rotate = 1;               // Default short edge flip
       if (!strcmp(temp, "XID8600"))
          xid8600 = 1;
       else if (!strncmp(temp, "XID580", 6))
@@ -716,7 +716,8 @@ static const char *transfer_flip(unsigned char immediate)
 {
    client_status("Transfer flip");
    if (!usb_ready(0))
-    usb_txn("Transfer flip", 0x31, 0x0A, to:90); // May have to wait for temp change
+    usb_txn("Transfer flip", 0x31, 0x0A, to:90);
+                                // May have to wait for temp change
    return error;
 }
 
@@ -724,7 +725,8 @@ static const char *transfer_eject(unsigned char immediate)
 {
    client_status("Transfer and done");
    if (!usb_ready(0))
-    usb_txn("Transfer eject", 0x31, 0x09, to:90); // May have to wait for temp change
+    usb_txn("Transfer eject", 0x31, 0x09, to:90);
+                                // May have to wait for temp change
    return error;
 }
 
@@ -732,7 +734,8 @@ static const char *transfer_return(unsigned char immediate)
 {
    client_status("Transfer");
    if (!usb_ready(0))
-    usb_txn("Transfer return", 0x31, 0x0D, to:90); // May have to wait for temp change
+    usb_txn("Transfer return", 0x31, 0x0D, to:90);
+                                // May have to wait for temp change
    return error;
 }
 
@@ -1519,7 +1522,7 @@ static char *job(const char *from)
                      }
                   if (printed)
                   {
-                     if (j_test(panel, "uvsingle", 0))
+                     if (j_test(rx, "uv-single", 0))
                         print_panels(printed, 0, side); // All in one
                      else
                      {          // UV printed separately
