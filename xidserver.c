@@ -204,7 +204,7 @@ static int dpi = 0,
     rows = 0,
     cols = 0;                   // Size
 static unsigned char xid8600 = 0;       // Is an XID8600
-static unsigned char flip = 0;  // Image needs flipping
+static unsigned char rotate = 0;        // Image needs flipping per side
 static SSL *ss;                 // SSL client connection
 static ajl_t i = NULL,
     o = NULL;                   // Output to client
@@ -442,12 +442,15 @@ static const char *usb_connect(j_t j)
       for (int i = 15; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
       j_store_string(j, "type", temp);
+      rotate = 2;               // default flip short edge
       if (!strcmp(temp, "XID8600"))
-         flip = xid8600 = 1;
+         xid8600 = 1;
       else if (!strncmp(temp, "XID580", 6))
-         flip = xid8600 = 0;
+         xid8600 = 0;
       else
          return error = "Unknown printer type";
+      if (!xid8600)
+         rotate ^= 3;           // Seems XID9300 is reversed
       strncpy(temp, (char *) rx + 8, 8);
       for (int i = 7; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
@@ -1315,6 +1318,10 @@ static char *job(const char *from)
       }
       if (print)
       {
+         if (j_test(rx, "rotate", 0))
+            rotate ^= 3;        // Rotate
+         if (j_test(rx, "long-edge-flip", 0))
+            rotate ^= 2;        // Rotate back
          if (j_istrue(print) || j_isnull(print))
          {
             moveto(POS_PRINT);  // ready to print
@@ -1344,6 +1351,7 @@ static char *job(const char *from)
                   int l = j_base64d(d + 22, &png);
                   FILE *f = fmemopen(png, l, "rb");
                   const char *process(void) {
+                     warnx("Rotate %X", rotate);        // TODO
                      if (png_sig_cmp(png, 0, l))
                         return error = "Not PNG";
                      png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -1408,6 +1416,7 @@ static char *job(const char *from)
                         {
                            int y = r + dy;
                            png_read_row(png_ptr, image, NULL);
+                           char flip = (rotate & (1 << side));
                            if (y >= 0 && y < rows)
                               for (int c = 0; c < width; c++)
                               {
@@ -1416,9 +1425,9 @@ static char *job(const char *from)
                                  {
                                     int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
                                     png_bytep p = image + 3 * c;
-                                    data[2][o] = *p++ ^ 0xFF;
-                                    data[1][o] = *p++ ^ 0xFF;
-                                    data[0][o] = *p++ ^ 0xFF;
+                                    data[FILM_Y][o] = *p++ ^ 0xFF;
+                                    data[FILM_M][o] = *p++ ^ 0xFF;
+                                    data[FILM_C][o] = *p++ ^ 0xFF;
                                  }
                               }
                         }
@@ -1443,6 +1452,7 @@ static char *job(const char *from)
                         {
                            int y = r + dy;
                            png_read_row(png_ptr, image, NULL);
+                           char flip = (rotate & (1 << side));
                            if (y >= 0 && y < rows)
                               for (int c = 0; c < width; c++)
                               {
@@ -1482,7 +1492,7 @@ static char *job(const char *from)
                   const char *d;
                   if ((d = j_get(panel, "YMC")) || (d = j_get(panel, "CMY")) || (d = j_get(panel, "C")) || (d = j_get(panel, "Colour")))
                      add(d, FILM_YMC);
-                  if ((d = j_get(panel, "K")))
+                  if ((d = j_get(panel, "K")) || (d = j_get(panel, "Black")))
                      add(d, FILM_K);
                   if ((d = j_get(panel, "UV")) || (d = j_get(panel, "U")))
                      add(d, FILM_U);

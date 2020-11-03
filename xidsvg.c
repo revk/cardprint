@@ -162,6 +162,10 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
          }
    j_t j = j_create();
    j_t p = j_store_array(j, "print");
+   if (xml_get(svg, "@long-edge-flip"))
+      j_store_true(j, "long-edge-flip");
+   if (xml_get(svg, "@rotate"))
+      j_store_true(j, "rotate");
    unsigned char *panel = malloc(cols * rows);
    for (int side = 0; side < 2; side++)
    {
