@@ -419,6 +419,7 @@ static const char *usb_connect(j_t j)
    // Connected
    status = "Connected";
    j_store_true(j, "usb");
+   get_status();
    {                            // Basic info
       unsigned char rx[96];
       int rxlen = 0;
@@ -608,9 +609,9 @@ static const char *set_settings(j_t j)
    return error;
 }
 
-static const char *get_info(j_t j)
+static const char *get_media(j_t j)
 {
-   j = j_store_object(j, "info");
+   j = j_store_object(j, "media");
    {
       unsigned char rx[44];
       int rxlen = 0;
@@ -1176,13 +1177,16 @@ static char *job(const char *from)
          libusb_reset_device(usb);
       return strdup(error);
    }
-   get_status();
    get_counters(j);
    get_settings(j, 1);
-   get_info(j);
+   get_media(j);
    get_status();
+   char ready = 0;
    if (!rxerr || rxerr == 0x0002D000)
+   {
       j_store_true(j, "ready"); // Ready for first command
+      ready = 1;
+   }
    client_tx(&j);
 
    // Expect no card in printer
@@ -1194,6 +1198,15 @@ static char *job(const char *from)
       moveto(POS_REJECT);
       if (debug)
          warnx("Rejected");
+      client_status("Card in printer was rejected");
+   }
+
+   usb_ready(0);
+   if (!ready)
+   {                            // We are now ready...
+      j = j_create();
+      j_store_true(j, "ready");
+      client_tx(&j);
    }
 
    // Handle messages both ways
