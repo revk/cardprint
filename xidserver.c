@@ -442,7 +442,7 @@ static const char *usb_connect(j_t j)
       for (int i = 15; i >= 0 && temp[i] == ' '; i--)
          temp[i] = 0;
       j_store_string(j, "type", temp);
-      rotate = 2;               // default flip short edge
+      rotate = 0;
       if (!strcmp(temp, "XID8600"))
          xid8600 = 1;
       else if (!strncmp(temp, "XID580", 6))
