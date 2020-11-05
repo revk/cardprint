@@ -48,13 +48,13 @@
 
 enum {
    FILM_K,
-   FILM_Y,
-   FILM_M,
    FILM_C,
+   FILM_M,
+   FILM_Y,
    FILM_U,
    FILM_P,
    FILMS,
-   FILM_YMC = FILM_Y
+   FILM_YMC = FILM_C
 };
 
 typedef struct setting_s setting_t;
@@ -1426,9 +1426,9 @@ static char *job(const char *from)
                                  {
                                     int o = (flip ? ((rows - 1 - y) * cols + (cols - 1 - x)) : (y * cols + x));
                                     png_bytep p = image + 3 * c;
-                                    data[FILM_Y][o] = *p++ ^ 0xFF;
-                                    data[FILM_M][o] = *p++ ^ 0xFF;
                                     data[FILM_C][o] = *p++ ^ 0xFF;
+                                    data[FILM_M][o] = *p++ ^ 0xFF;
+                                    data[FILM_Y][o] = *p++ ^ 0xFF;
                                  }
                               }
                         }
