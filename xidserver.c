@@ -719,7 +719,7 @@ static const char *transfer_flip(unsigned char immediate)
    client_status("Transfer flip");
    if (!usb_ready(0))
     usb_txn("Transfer flip", 0x31, 0x0A, to:90);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -728,7 +728,7 @@ static const char *transfer_eject(unsigned char immediate)
    client_status("Transfer and done");
    if (!usb_ready(0))
     usb_txn("Transfer eject", 0x31, 0x09, to:90);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -737,7 +737,7 @@ static const char *transfer_return(unsigned char immediate)
    client_status("Transfer");
    if (!usb_ready(0))
     usb_txn("Transfer return", 0x31, 0x0D, to:90);
-                                // May have to wait for temp change
+   // May have to wait for temp change
    return error;
 }
 
@@ -923,6 +923,7 @@ static int count = 0;           // Print count
 // Cards
 static SCARDCONTEXT cardctx;
 static SCARDHANDLE card;
+static DWORD proto;
 static BYTE atr[MAX_ATR_SIZE];
 static DWORD atrlen;
 
@@ -958,7 +959,7 @@ static void card_check(void)
          readeric = strdup(p);
       else if (!readeric && strstr(p, "Precise Biometrics Sense MC"))
          readeric = strdup(p);
-      else if (!readerrfid && strstr(p, "OMNIKEY AG CardMan 5121"))
+      else if (!readerrfid && strstr(p, "OMNIKEY CardMan") && strstr(p, " 5121 ") && strstr(p, " 00 01"))
          readerrfid = strdup(p);
       else if (debug)
          warnx("Additional card reader %s ignored", p);
@@ -983,7 +984,6 @@ static const char *card_connect(const char *reader)
    while ((res = SCardGetStatusChange(cardctx, 1000, &status, 1)) == SCARD_S_SUCCESS && (status.dwEventState & SCARD_STATE_EMPTY) && time(0) < giveup);
    if (status.dwEventState & SCARD_STATE_EMPTY)
       return "IC card not responding";
-   DWORD proto;
    if ((res = SCardConnect(cardctx, reader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card, &proto)) != SCARD_S_SUCCESS)
    {
       warnx("Cannot connect to %s (%s)", reader, pcsc_stringify_error(res));
@@ -1017,7 +1017,7 @@ static void card_txn(int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigne
    SCARD_IO_REQUEST recvpci;
    dump(tx, txlen, "Card Tx");
    int res;
-   if ((res = SCardTransmit(card, SCARD_PCI_T0, tx, txlen, &recvpci, rx, rxlenp)) != SCARD_S_SUCCESS)
+   if ((res = SCardTransmit(card, proto == SCARD_PROTOCOL_T0 ? SCARD_PCI_T0 : SCARD_PCI_T1, tx, txlen, &recvpci, rx, rxlenp)) != SCARD_S_SUCCESS)
    {
       warnx("Failed to send command (%s)", pcsc_stringify_error(res));
       *rxlenp = 0;
