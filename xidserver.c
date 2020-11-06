@@ -1318,68 +1318,6 @@ static char *job(const char *from)
             continue;
          }
       }
-      if ((cmd = j_find(rx, "mifare")))
-      {                         // Block MIFARE classic encode
-         if (j_isarray(cmd))
-         {
-            int sent = 0;
-            unsigned char rx[256];
-            if (!error)
-            {                   // Key load
-               unsigned char tx[] = { 0xFF, 0x82, 0x20, 0x00, 6, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-               DWORD rxlen = sizeof(rx);
-               card_txn(sizeof(tx), tx, &rxlen, rx);
-               if (!error && (rxlen < 2 || (rx[rxlen - 2] >> 4) != 9))
-                  error = "RFID key load failed";
-            }
-            j_t s;
-            for (int sector = 0; !error && (s = j_index(cmd, sector)); sector++)
-            {
-               char keyed = 0;
-               j_t b;
-               for (int block = 0; !error && block < 4 && (b = j_index(s, block)); block++)
-                  if (j_isstring(b))
-                  {
-                     if (!keyed++)
-                     {
-                        unsigned char tx[10] = { 0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0, 0, 0x60, 0x00 };
-                        tx[6] = (sector >> 6);
-                        tx[7] = (sector << 2);
-                        DWORD rxlen = sizeof(rx);
-                        card_txn(10, tx, &rxlen, rx);
-                        if (!error && (rxlen < 2 || (rx[rxlen - 2] >> 4) != 9))
-                           error = "RFID authentication failed";
-                     }
-                     unsigned char tx[21] = { 0xFF, 0xD6, 0, 0, 16 };
-                     tx[2] = (sector >> 6);
-                     tx[3] = (sector << 2) + block;
-                     unsigned char *data=NULL;
-                     int l = j_base16d(j_val(b), &data);
-                     if (l > 16)
-                        error = "Data length error";
-                     else
-                     {
-                        memcpy(tx + 5, data, l);
-                        DWORD rxlen = sizeof(rx);
-                        card_txn(21, tx, &rxlen, rx);
-                        if (!error && (rxlen < 2 || (rx[rxlen - 2] >> 4) != 9))
-                           error = "RFID write failed";
-                        else
-                           sent++;
-                     }
-		     freez(data);
-                  }
-            }
-            if (!error)
-            {
-               j_t j = j_create();
-               j_store_int(j, "mifare", sent);
-               j_store_true(j, "ready");
-               client_tx(&j);
-               continue;
-            }
-         }
-      }
       if (print)
       {
          if (j_test(rx, "rotate", 0))
