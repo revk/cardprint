@@ -100,11 +100,12 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
       xml_write(o, svg);
       fclose(o);
    }
-   const char layertag[] = "CKU";
-   char *tmp[2][3] = { };
-   pid_t pid[2][3] = { };
+   const char layertag[] = "CKUP";
+#define	LAYERS 4
+   char *tmp[2][LAYERS] = { };
+   pid_t pid[2][LAYERS] = { };
    for (int side = 0; side < 2; side++)
-      for (int layer = 0; layer < 3; layer++)
+      for (int layer = 0; layer < LAYERS; layer++)
       {
          xml_t find(xml_t x) {
             const char *v = xml_get(x, "@id");
@@ -152,7 +153,7 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
          }
       }
    for (int side = 0; side < 2; side++)
-      for (int layer = 0; layer < 3; layer++)
+      for (int layer = 0; layer < LAYERS; layer++)
          if (tmp[side][layer])
          {
             int pstatus = 0;
@@ -170,7 +171,7 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    for (int side = 0; side < 2; side++)
    {
       j_t s = j_append_object(p);
-      for (int layer = 0; layer < 3; layer++)
+      for (int layer = 0; layer < LAYERS; layer++)
          if (tmp[side][layer])
          {
             int f = open(tmp[side][layer], O_RDONLY);
@@ -185,7 +186,7 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
                err(1, "Cannot map png tmp file");
             else
             {
-               const char *tag[] = { "C", "K", "U" };
+               const char *tag[] = { "YMC", "K", "UV", "PO" };
                size_t len = (length + 5) / 6 * 8 + 3;
                char *b64 = malloc(len);
                if (!b64)
@@ -202,7 +203,7 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
    unlink(tmpsvg);
    free(tmpsvg);
    for (int side = 0; side < 2; side++)
-      for (int layer = 0; layer < 3; layer++)
+      for (int layer = 0; layer < LAYERS; layer++)
          if (tmp[side][layer])
          {
             unlink(tmp[side][layer]);
