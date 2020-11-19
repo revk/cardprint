@@ -974,7 +974,7 @@ static const char *card_connect(const char *reader)
    if (debug)
       warnx("Connecting to %s", reader);
    if (!reader)
-      return "No IC reader found";
+      return "No card reader found";
    // Yes, we have context, but seems to need it again!
    if ((res = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
       return "Cannot get PCSC context, is pcscd running?";
@@ -983,11 +983,11 @@ static const char *card_connect(const char *reader)
    time_t giveup = time(0) + 10;
    while ((res = SCardGetStatusChange(cardctx, 1000, &status, 1)) == SCARD_S_SUCCESS && (status.dwEventState & SCARD_STATE_EMPTY) && time(0) < giveup);
    if (status.dwEventState & SCARD_STATE_EMPTY)
-      return "IC card not responding";
+      return "Card not responding";
    if ((res = SCardConnect(cardctx, reader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card, &proto)) != SCARD_S_SUCCESS)
    {
       warnx("Cannot connect to %s (%s)", reader, pcsc_stringify_error(res));
-      return "IC card failed to connect";
+      return "Card failed to connect";
    }
    atrlen = sizeof(atr);
    DWORD state;
