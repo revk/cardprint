@@ -697,7 +697,7 @@ static const char *card_load(unsigned char newposn, unsigned char immediate, uns
    client_status("Loading card");
    if (usb_ready(1))
       return error;
- if (usb_txn("Card load", 0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
+ if (usb_txn("Card load", 0x31, 0x01, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:90))
       return error;
    posn = newposn;
    return error;
@@ -708,7 +708,7 @@ static const char *card_move(unsigned char newposn, unsigned char immediate, uns
    client_status("Moving card");
    if (usb_ready(0))
       return error;
- if (usb_txn("Card move", 0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:30))
+ if (usb_txn("Card move", 0x31, 0x0B, p2: immediate ? 1 : 0, p4: (flip ? 2 : 0) + (filminit ? 4 : 0), p7: newposn, to:60))
       return error;
    posn = newposn;
    return error;
@@ -718,7 +718,7 @@ static const char *transfer_flip(unsigned char immediate)
 {
    client_status("Transfer flip");
    if (!usb_ready(0))
-    usb_txn("Transfer flip", 0x31, 0x0A, to:90);
+    usb_txn("Transfer flip", 0x31, 0x0A, to:120);
    // May have to wait for temp change
    return error;
 }
@@ -727,7 +727,7 @@ static const char *transfer_eject(unsigned char immediate)
 {
    client_status("Transfer and done");
    if (!usb_ready(0))
-    usb_txn("Transfer eject", 0x31, 0x09, to:90);
+    usb_txn("Transfer eject", 0x31, 0x09, to:120);
    // May have to wait for temp change
    return error;
 }
@@ -736,7 +736,7 @@ static const char *transfer_return(unsigned char immediate)
 {
    client_status("Transfer");
    if (!usb_ready(0))
-    usb_txn("Transfer return", 0x31, 0x0D, to:90);
+    usb_txn("Transfer return", 0x31, 0x0D, to:120);
    // May have to wait for temp change
    return error;
 }
@@ -903,7 +903,7 @@ static const char *print_panels(unsigned char panels, unsigned char immediate, u
    if (panels & (1 << FILM_P))
       set |= 0x10;              // PO
    if (!usb_ready(0))
-    usb_txn("Print panels", 0x31, 0x08, set, 0, buffer, to:30);
+    usb_txn("Print panels", 0x31, 0x08, set, 0, buffer, to:60);
    return error;
 }
 
