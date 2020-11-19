@@ -1524,12 +1524,12 @@ static char *job(const char *from)
                      }
                   if (printed)
                   {
-                     if (j_test(rx, "uv-single", 0))
-                        print_panels(printed, 0, side); // All in one
+                     if (j_test(rx, "uv-single", 0) || (printed & (1 << FILM_P)))
+                        print_panels(printed, 0, side); // All in one, has to be when PO
                      else
                      {          // UV printed separately
                         if (printed & ~(1 << FILM_U))
-                           print_panels(printed & 0x0F, 0, side);       // Non UV
+                           print_panels(printed & ~(1 << FILM_U), 0, side);     // Non UV
                         if (printed & (1 << FILM_U))
                         {       // UV
                            if (printed & ~(1 << FILM_U))
