@@ -100,7 +100,7 @@ static const setting_t settings[] = {   // Ethernet and USB settings
 
 #define SETTINGS (sizeof(settings)/sizeof(*settings))
 
-static const char *inktype[] = { "YMCK", "", "", "", "YMCKK", "YMCKU" };
+static const char *inktype[] = { "YMCK", "Ink1", "YMCKP", "Ink3", "YMCKK", "YMCKU" };
 
 static const char *msg(unsigned int e)
 {
