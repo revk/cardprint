@@ -3,6 +3,9 @@ TARGETS=xidsvg xidserver xidsvg.o
 all: ${TARGETS}
 clean:
 	rm -f ${TARGETS}
+pull:
+	git pull
+	git submodule update --recursive
 
 OPTS=-fPIC -g -IAXL -IAJL -D_GNU_SOURCE --std=gnu99 -Wall
 
