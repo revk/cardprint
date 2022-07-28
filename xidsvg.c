@@ -146,7 +146,8 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
             args[a++] = NULL;
             int n = open("/dev/null", 0);
             dup2(n, 1);
-            dup2(n, 2);
+            if (!debug)
+               dup2(n, 2);
             close(n);
             execv("/usr/bin/inkscape", (char *const *) args);
             err(1, "Failed to run inkscape");
