@@ -133,10 +133,10 @@ j_t xid_compose(xml_t svg, int dpi, int rows, int cols)
             char *args[100];
             int a = 0;
             args[a++] = "inkscape";
-            args[a++] = "--without-gui";
             args[a++] = "--export-area-page";
             args[a++] = "--export-id-only";
-            if (asprintf(&args[a++], "--export-png=%s", tmp[side][layer]) < 0)
+            args[a++] = "--export-type=png";
+            if (asprintf(&args[a++], "--export-filename=%s", tmp[side][layer]) < 0)
                errx(1, "malloc");
             if (asprintf(&args[a++], "--export-dpi=%d", dpi) < 0)
                errx(1, "malloc");
