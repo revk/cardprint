@@ -969,7 +969,7 @@ static DWORD atrlen;
 static void
 card_check (void)
 {                               // list the readers
-   long res;
+   PCSC_API LONG res;
    DWORD len;
    freez (readeric);
    freez (readerrfid);
@@ -1011,7 +1011,7 @@ card_check (void)
 static const char *
 card_connect (const char *reader)
 {
-   PCSC_API LONG  res;
+   PCSC_API LONG res;
    if (debug)
       warnx ("Connecting to %s", reader);
    if (!reader)
@@ -1049,7 +1049,7 @@ card_disconnect (void)
 {
    if (debug)
       warnx ("Card disconnect");
-   int res;
+   PCSC_API LONG res;
    if ((res = SCardDisconnect (card, SCARD_UNPOWER_CARD)) != SCARD_S_SUCCESS)
       return "Cannot end transaction";
    return error;
@@ -1062,7 +1062,7 @@ card_txn (int txlen, const unsigned char *tx, LPDWORD rxlenp, unsigned char *rx)
       return;
    SCARD_IO_REQUEST recvpci;
    dump (tx, txlen, "Card Tx");
-   int res;
+   PCSC_API LONG res;
    if ((res =
         SCardTransmit (card, proto == SCARD_PROTOCOL_T0 ? SCARD_PCI_T0 : SCARD_PCI_T1, tx, txlen, &recvpci, rx,
                        rxlenp)) != SCARD_S_SUCCESS)
@@ -1844,7 +1844,7 @@ main (int argc, const char *argv[])
          warnx ("Job failed %d", WEXITSTATUS (pstatus));
    }
    {
-      int res;
+      PCSC_API LONG res;
       if ((res = SCardReleaseContext (cardctx)) != SCARD_S_SUCCESS)
          errx (1, "Cant release context (%s)", pcsc_stringify_error (res));
    }
