@@ -1037,7 +1037,7 @@ card_connect (const char *reader)
    DWORD state;
    DWORD temp;
    if ((res = SCardStatus (card, 0, &temp, &state, &proto, atr, &atrlen)) != SCARD_S_SUCCESS)
-      return "Cannot get card status";
+      return pcsc_stringify_error (res);
    j_t j = j_create ();
    j_store_string (j, "atr", j_base16 (atrlen, atr));
    client_tx (&j);
@@ -1051,7 +1051,7 @@ card_disconnect (void)
       warnx ("Card disconnect");
    PCSC_API LONG res;
    if ((res = SCardDisconnect (card, SCARD_UNPOWER_CARD)) != SCARD_S_SUCCESS)
-      return "Cannot end transaction";
+      return pcsc_stringify_error (res);
    return error;
 }
 
