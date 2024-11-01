@@ -1027,7 +1027,7 @@ card_connect (const char *reader)
    if (status.dwEventState & SCARD_STATE_EMPTY)
       return "Card not responding";
    if ((res =
-        SCardConnect (cardctx, reader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card,
+        SCardConnect (cardctx, reader, SCARD_SHARE_DIRECT, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card,
                       &proto)) != SCARD_S_SUCCESS)
    {
       warnx ("Cannot connect to card on %s (%s)", reader, pcsc_stringify_error (res));
