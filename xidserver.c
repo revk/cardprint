@@ -1031,7 +1031,7 @@ card_connect (const char *reader)
                       &proto)) != SCARD_S_SUCCESS)
    {
       warnx ("Cannot connect to card on %s (%s)", reader, pcsc_stringify_error (res));
-      return "Card failed to connect";
+      return pcsc_stringify_error (res);
    }
    atrlen = sizeof (atr);
    DWORD state;
