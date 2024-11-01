@@ -1011,7 +1011,7 @@ card_check (void)
 static const char *
 card_connect (const char *reader)
 {
-   int res;
+   PCSC_API LONG  res;
    if (debug)
       warnx ("Connecting to %s", reader);
    if (!reader)
