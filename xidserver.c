@@ -959,8 +959,9 @@ static const char *certfile = NULL;
 static int count = 0;           // Print count
 
 // Cards
-static SCARDCONTEXT cardctx;
-static SCARDHANDLE card;
+static SCARDCONTEXT cardctx = { 0 };
+static SCARDHANDLE card = { 0 };
+
 static DWORD proto;
 static BYTE atr[MAX_ATR_SIZE];
 static DWORD atrlen;
