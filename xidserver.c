@@ -224,7 +224,8 @@ dump (const void *buf, size_t len, const char *tag)
       return;
    static const char *head[] =
       { "𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿", "𝙰", "𝙱", "𝙲", "𝙳", "𝙴",
-"𝙵" };
+      "𝙵"
+   };
    for (int i = 0; i < 16; i++)
       fprintf (stderr, " %s ", head[i]);
    fprintf (stderr, "%s\n", tag);
@@ -301,7 +302,8 @@ usb_txn_opts (usb_txn_t o)
    {                            // Send command
       unsigned char cmd[31] =
          { 'U', 'S', 'B', 'C', tag, tag >> 8, tag >> 16, tag >> 24, o.len, o.len >> 8, o.len >> 16, o.len >> 24, o.rxlen ? 0x80 : 0,
-0, o.cmdlen, o.cmd, o.p1, o.p2, o.p3, o.p4, o.p5, o.p6, o.p7, o.p8 };
+         0, o.cmdlen, o.cmd, o.p1, o.p2, o.p3, o.p4, o.p5, o.p6, o.p7, o.p8
+      };
       int try = 10,
          txsize = 0;
       while (try--)
@@ -345,7 +347,7 @@ usb_txn_opts (usb_txn_t o)
          return error = libusb_strerror (r);
    }
    {                            // Get status
-      unsigned char status[13] = { };
+      unsigned char status[13] = { 0 };
       int try = 10,
          rxsize = 0;
       while (try--)
@@ -805,7 +807,7 @@ mag_iso_encode (j_t j)
    if (usb_ready (0))
       return error;
    unsigned char temp[76 + 37 + 104 + 6];
-   unsigned char tags[3] = { };
+   unsigned char tags[3] = { 0 };
    int p = 0;
    int c = 0;
    void encode (unsigned char tag, unsigned char max, j_t j)
@@ -1016,7 +1018,7 @@ card_connect (const char *reader)
    // Yes, we have context, but seems to need it again!
    if ((res = SCardEstablishContext (SCARD_SCOPE_SYSTEM, NULL, NULL, &cardctx)) != SCARD_S_SUCCESS)
       return "Cannot get PCSC context, is pcscd running?";
-   SCARD_READERSTATE status = { };
+   SCARD_READERSTATE status = { 0 };
    status.szReader = reader;
    time_t giveup = time (0) + 10;
    while ((res = SCardGetStatusChange (cardctx, 1000, &status, 1)) == SCARD_S_SUCCESS && (status.dwEventState & SCARD_STATE_EMPTY)
@@ -1391,7 +1393,7 @@ job (const char *from)
                if (!panel)
                   return error;
                unsigned char found = 0;
-               unsigned char *data[FILMS] = { };
+               unsigned char *data[FILMS] = { 0 };
                const char *add (const char *d, int layer)
                {
                   if (layer >= FILMS)
