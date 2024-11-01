@@ -1027,7 +1027,7 @@ card_connect (const char *reader)
         SCardConnect (cardctx, reader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card,
                       &proto)) != SCARD_S_SUCCESS)
    {
-      warnx ("Cannot connect to %s (%s)", reader, pcsc_stringify_error (res));
+      warnx ("Cannot connect to card on %s (%s)", reader, pcsc_stringify_error (res));
       return "Card failed to connect";
    }
    atrlen = sizeof (atr);
